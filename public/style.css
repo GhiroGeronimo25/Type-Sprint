@@ -320,7 +320,7 @@ input[type="text"]:focus { outline: none; background: #fff; box-shadow: 4px 4px 
 }
 .panel:empty { display: none; }
 .panel h2 { margin: 0 0 0.35rem; font-size: 2.2rem; font-weight: 800; font-stretch: 75%; letter-spacing: -0.01em; line-height: 1.05; }
-.panel p { margin: 0 0 1.1rem; font-weight: 500; max-width: 40rem; }
+.panel p { margin: 0 0 1.1rem; font-weight: 500; max-width: none; }
 .panel p:last-child { margin-bottom: 0; }
 .panel strong { background: var(--ink); color: var(--signal); padding: 0.05rem 0.5rem; border-radius: 6px; letter-spacing: 0.14em; }
 .panel .btn { background: var(--ink); color: var(--signal); box-shadow: 4px 4px 0 var(--coral); }
