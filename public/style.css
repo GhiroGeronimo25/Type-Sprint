@@ -432,3 +432,35 @@ input[type="text"]:focus { outline: none; background: #fff; box-shadow: 4px 4px 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+
+/* ---------- Wallet and payouts ---------- */
+.wallet {
+  background: var(--white);
+  color: var(--ink);
+  border: var(--line);
+  border-radius: var(--radius);
+  box-shadow: 8px 8px 0 var(--ink);
+  padding: 1.25rem 1.5rem 1.5rem;
+  margin-bottom: 2rem;
+  animation: rise 0.4s ease-out 0.12s backwards;
+}
+.wallet h2 { margin: 0; font-size: 1.8rem; font-weight: 800; font-stretch: 75%; }
+.wallet-note { margin: 0 0 0.75rem; color: var(--muted); font-weight: 600; font-size: 0.9rem; }
+.ledger { list-style: none; margin: 0; padding: 0; display: grid; }
+.ledger li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 1rem; padding: 0.45rem 0.2rem; border-top: 2px dashed #d3d8ea; font-weight: 600; }
+.ledger .tx { min-width: 3.5rem; font-weight: 800; font-size: 1.15rem; }
+.ledger .in, .payout .in { color: #0a8f62; }
+.ledger .out, .payout .out { color: var(--bad); }
+.ledger small { color: var(--muted); font-weight: 700; letter-spacing: 0.1em; }
+.ledger .bal, .ledger .when { color: var(--muted); }
+.ledger .when { margin-left: auto; }
+.chip { background: var(--signal); color: var(--ink); border: var(--line); border-radius: 999px; padding: 0.1rem 0.8rem; font-weight: 800; font-size: 0.9rem; white-space: nowrap; }
+.lane.watching { opacity: 0.6; }
+.name .rating { margin-left: 0.3rem; }
+.payout { list-style: none; margin: 0 0 1.1rem; padding: 0; display: grid; max-width: 22rem; }
+.payout li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.25rem 0; border-top: 2px dashed rgba(10, 15, 42, 0.3); font-weight: 600; }
+.payout b { font-weight: 800; }
+.panel .payout .in { color: #07694a; }
+@media (min-width: 1000px) { #home .wallet { grid-column: 1; grid-row: 4; margin: 2.5rem 0 0; } #home .records { grid-row: 5; } }
+@media (max-width: 560px) { .wallet { padding: 1rem; } .wallet h2 { font-size: 1.4rem; } }

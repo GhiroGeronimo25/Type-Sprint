@@ -16,7 +16,7 @@ function getPid() {
 const pid = getPid();
 
 // what the screen remembers between server updates
-const state = { room: null, text: '', startAt: 0, limitMs: 60000, offset: 0, chars: [], restore: '' };
+const state = { account: null, result: null, room: null, text: '', startAt: 0, limitMs: 60000, offset: 0, chars: [], restore: '' };
 
 // ---------- helpers ----------
 function esc(text) {
@@ -181,6 +181,44 @@ function clearRecords() {
 $('clearRecords').addEventListener('click', clearRecords);
 renderRecords();
 
+// ---------- wallet: rating, coins and transactions ----------
+const ledgerLabels = { grant: 'Welcome coins', entry: 'Entry fee', reward: 'Prize', refund: 'Refund' };
+
+function signed(n) {
+  return (n > 0 ? '+' : n < 0 ? '\u2212' : '') + Math.abs(n);
+}
+
+function setAccount(account) {
+  state.account = account;
+  renderWallet();
+}
+
+function renderWallet() {
+  const a = state.account;
+  if (!a) return;
+  $('wallet').hidden = false;
+  $('feeNote').textContent = a.entryFee;
+  $('walletStats').innerHTML = '<div><b>' + a.coins + '</b><span>coins</span></div>' +
+    '<div><b>' + a.rating + '</b><span>rating</span></div>' +
+    '<div><b>' + a.wins + '/' + a.races + '</b><span>wins / races</span></div>';
+  let html = '';
+  for (let i = 0; i < a.ledger.length; i++) {
+    const t = a.ledger[i];
+    const when = new Date(t.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    html += '<li><span class="tx ' + (t.amount < 0 ? 'out' : 'in') + '">' + signed(t.amount) + '</span>' +
+      '<span class="what">' + ledgerLabels[t.type] + (t.room ? ' <small>' + esc(t.room) + '</small>' : '') + '</span>' +
+      '<span class="bal">' + t.balance + ' left</span><span class="when">' + when + '</span></li>';
+  }
+  $('ledger').innerHTML = html;
+  $('walletChip').hidden = false;
+  $('walletChip').textContent = a.coins + ' coins \u00b7 rating ' + a.rating;
+}
+
+function onResult(result) {
+  state.result = result;
+  if (state.room) render();
+}
+
 // ---------- messages from the server ----------
 function onRoomState(snapshot) {
   state.room = snapshot;
@@ -194,6 +232,7 @@ function onCountdown(data) {
   state.limitMs = data.limitMs;
   state.offset = data.serverNow - Date.now();
   state.restore = '';
+  state.result = null;
   $('typing').value = '';
   buildPassage();
 }
@@ -210,6 +249,9 @@ function onDisconnect() {
 
 // on every (re)connect, take our seat back if we were in a room
 function onConnect() {
+  socket.emit('account:get', { pid: pid }, function (res) {
+    if (res && res.ok) setAccount(res.account);
+  });
   const code = localStorage.getItem('session');
   if (!code) return;
   if (urlRoom && urlRoom.toUpperCase().slice(0, 4) !== code) return; // opened an invite to another room
@@ -230,6 +272,7 @@ function onRejoined(result) {
   state.limitMs = result.limitMs;
   state.offset = result.serverNow - Date.now();
   state.restore = $('typing').disabled ? result.input : '';
+  state.result = result.result || null;
   if (state.text) buildPassage();
   history.replaceState(null, '', '?room=' + result.code);
   showScreen('room');
@@ -243,6 +286,9 @@ socket.on('connect', onConnect);
 socket.on('room:state', onRoomState);
 socket.on('race:countdown', onCountdown);
 socket.on('race:resync', onResync);
+socket.on('account:state', setAccount);
+socket.on('race:result', onResult);
+socket.on('race:notice', function (data) { showToast(data.message); });
 socket.on('disconnect', onDisconnect);
 
 // ---------- drawing the room (runs on every server update) ----------
@@ -270,7 +316,7 @@ function render() {
   renderPanel(room, me, index + 1);
 
   // you can only type while the race is on and you haven't finished
-  const canType = room.status === 'racing' && !me.finished;
+  const canType = room.status === 'racing' && me.entered && !me.finished;
   if (canType && $('typing').disabled) {
     const restore = state.restore;
     state.restore = '';
@@ -280,7 +326,7 @@ function render() {
     $('typing').focus();
   }
   if (!canType) $('typing').disabled = true;
-  saveRecord(room, me, index + 1);
+  if (me.entered) saveRecord(room, me, index + 1);
 }
 
 function renderLanes(room) {
@@ -295,9 +341,13 @@ function renderLanes(room) {
     }
     if (p.finished) cls += ' finished';
     if (p.away) cls += ' left';
+    if (!p.entered && room.status !== 'lobby') {
+      cls += ' watching';
+      name += ' <small>(watching)</small>';
+    }
     html += '<div class="' + cls + '">' +
       '<span class="rank">' + (i + 1) + '</span>' +
-      '<span class="name">' + name + '</span>' +
+      '<span class="name">' + name + ' <small class="rating">' + p.rating + '</small></span>' +
       '<div class="track"><div class="fill" style="width:' + (p.progress * 100).toFixed(1) + '%"></div></div>' +
       '<span class="speed"><b>' + p.wpm + '</b> wpm</span></div>';
   }
@@ -311,13 +361,15 @@ function renderPanel(room, me, rank) {
 
   if (room.status === 'lobby') {
     html = '<h2>Waiting for racers</h2><p>Share the code <strong>' + room.code +
-      '</strong> or click it above to copy an invite link. You can also start alone to practice.</p>';
+      '</strong> or click it above to copy an invite link. Entry is ' + room.fee + ' coins per racer. Starting alone just returns your own fee.</p>';
     if (isHost) html += '<button id="start" class="btn" type="button">Start race</button>';
     else html += '<p>Waiting for the host to start.</p>';
   } else if (room.status === 'countdown') {
     html = '<div class="count" id="count">3</div>';
   } else if (room.status === 'finished') {
-    if (me.finished) {
+    if (!me.entered) {
+      html = '<h2>You watched this one</h2><p>You needed ' + room.fee + ' coins to enter.';
+    } else if (me.finished) {
       html = '<h2>You finished ' + ordinal(rank) + '</h2><p>' + me.wpm + ' WPM, ' + me.accuracy +
         '% accuracy, ' + (me.finishMs / 1000).toFixed(1) + ' seconds.';
     } else {
@@ -325,13 +377,25 @@ function renderPanel(room, me, rank) {
         Math.round(me.progress * 100) + '% at ' + me.wpm + ' WPM.';
     }
     if (winner.finished && winner.id !== me.id) html += ' ' + esc(winner.name) + ' won at ' + winner.wpm + ' WPM.';
-    html += '</p>';
+    html += '</p>' + resultHtml(me);
     if (isHost) html += '<button id="start" class="btn" type="button">Race again</button>';
     else html += '<p>Waiting for the host to start another race.</p>';
   }
 
   $('panel').innerHTML = html;
   if ($('start')) $('start').addEventListener('click', startRace);
+}
+
+// what this race cost and paid, plus the rating change
+function resultHtml(me) {
+  const r = state.result;
+  if (!me.entered || !r) return '';
+  return '<ul class="payout">' +
+    '<li><span>Entry fee</span><b class="out">' + signed(-r.fee) + '</b></li>' +
+    '<li><span>Prize</span><b class="in">' + signed(r.payout) + '</b></li>' +
+    '<li><span>Net coins</span><b class="' + (r.net < 0 ? 'out' : 'in') + '">' + signed(r.net) + '</b></li>' +
+    '<li><span>Rating</span><b class="' + (r.ratingDelta < 0 ? 'out' : 'in') + '">' + r.ratingBefore + ' \u2192 ' + r.ratingAfter +
+    ' (' + signed(r.ratingDelta) + ')</b></li></ul>';
 }
 
 function startRace() {

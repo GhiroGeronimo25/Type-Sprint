@@ -4,6 +4,7 @@ const http = require('http');
 const express = require('express');
 const socketio = require('socket.io');
 const PASSAGES = require('./passages');
+const createAccounts = require('./accounts');
 
 const PORT = process.env.PORT || 3000;
 const COUNTDOWN_MS = 3000; // wait before the race starts
@@ -20,6 +21,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ---------- saved results (survive restarts) ----------
 const DATA_DIR = path.join(__dirname, 'data');
 const RESULTS_FILE = path.join(DATA_DIR, 'results.json');
+const accounts = createAccounts(path.join(DATA_DIR, 'accounts.json'));
+const ENTRY_FEE = accounts.ENTRY_FEE;
 let results = [];
 try {
   results = JSON.parse(fs.readFileSync(RESULTS_FILE, 'utf8'));
@@ -44,11 +47,13 @@ function saveResults() {
 function recordRace(room) {
   let anyone = false;
   const players = [];
-  for (let i = 0; i < room.players.length; i++) {
-    const p = room.players[i];
+  const entrants = room.players.filter(function (p) { return p.entered; });
+  for (let i = 0; i < entrants.length; i++) {
+    const p = entrants[i];
     if (p.correct > 0) anyone = true;
     players.push({
       rank: i + 1,
+      coins: p.result ? p.result.payout : 0,
       name: p.name,
       wpm: p.wpm,
       accuracy: p.accuracy,
@@ -121,13 +126,14 @@ function pickHost(room) {
 
 function allFinished(room) {
   for (let i = 0; i < room.players.length; i++) {
-    if (!room.players[i].finished) return false;
+    if (room.players[i].entered && !room.players[i].finished) return false;
   }
   return true;
 }
 
 // sort order: finished players (earliest first), then everyone else by progress
 function byRank(a, b) {
+  if (a.entered !== b.entered) return a.entered ? -1 : 1;
   if (a.finished !== b.finished) return a.finished ? -1 : 1;
   if (a.finished) return a.finishedAt - b.finishedAt;
   return b.correct - a.correct;
@@ -143,6 +149,8 @@ function resetPlayer(p) {
   p.accuracy = 100;
   p.finished = false;
   p.finishedAt = 0;
+  p.entered = false; // paid the entry fee for this race
+  p.result = null;   // coins and rating change once the race is over
 }
 
 function updateStats(room, p) {
@@ -155,7 +163,7 @@ function updateStats(room, p) {
 
 // returns false if the input looks fake (paste, bots) so the client can be reset
 function handleInput(room, p, input) {
-  if (room.status !== 'racing' || p.finished || Date.now() < room.startAt) return true;
+  if (room.status !== 'racing' || !p.entered || p.finished || Date.now() < room.startAt) return true;
 
   input = String(input || '').slice(0, room.text.length);
   const correct = commonPrefix(input, room.text);
@@ -197,6 +205,8 @@ function broadcast(room) {
       wpm: p.wpm,
       accuracy: p.accuracy,
       finished: p.finished,
+      entered: p.entered,
+      rating: p.rating,
       away: !!p.away,
       finishMs: p.finishedAt - room.startAt,
     });
@@ -207,16 +217,38 @@ function broadcast(room) {
     hostId: room.hostId,
     startAt: room.startAt,
     serverNow: Date.now(),
+    fee: ENTRY_FEE,
+    pot: room.pot || 0,
     players: players,
   });
 }
 
 // ---------- race flow ----------
+function sendAccount(p) {
+  io.to(p.id).emit('account:state', accounts.view(p.pid));
+}
+
+// Returns an error message if the race can't start. Charges the entry fee of everyone who can pay;
+// racers with too few coins stay in the room and watch.
 function startRace(room) {
+  const payers = room.players.filter(function (p) { return accounts.canAfford(p.pid, ENTRY_FEE); });
+  if (payers.length === 0) return 'Nobody has ' + ENTRY_FEE + ' coins for the entry fee.';
+
   room.text = PASSAGES[Math.floor(Math.random() * PASSAGES.length)];
   room.status = 'countdown';
   room.startAt = Date.now() + COUNTDOWN_MS;
-  for (let i = 0; i < room.players.length; i++) resetPlayer(room.players[i]);
+  room.pot = 0;
+  for (let i = 0; i < room.players.length; i++) {
+    const p = room.players[i];
+    resetPlayer(p);
+    if (accounts.charge(p.pid, ENTRY_FEE, room.code)) {
+      p.entered = true;
+      room.pot += ENTRY_FEE;
+    } else {
+      io.to(p.id).emit('race:notice', { message: 'You need ' + ENTRY_FEE + ' coins to enter. You are watching this one.' });
+    }
+    sendAccount(p);
+  }
 
   // the passage is only revealed when the countdown starts
   io.to(room.code).emit('race:countdown', {
@@ -229,6 +261,7 @@ function startRace(room) {
   setTimeout(function () {
     beginRacing(room);
   }, COUNTDOWN_MS);
+  return '';
 }
 
 function beginRacing(room) {
@@ -246,6 +279,23 @@ function beginRacing(room) {
   }, RACE_MS);
 }
 
+// pay prizes and update ratings, once per race
+function settleRace(room) {
+  const ranked = room.players.filter(function (p) { return p.entered; });
+  if (ranked.length === 0) return;
+  const outcome = accounts.settle(room.code, ranked.map(function (p) {
+    return { pid: p.pid, active: p.correct > 0 };
+  }), ENTRY_FEE, room.pot);
+  for (let i = 0; i < ranked.length; i++) {
+    const p = ranked[i];
+    p.result = outcome[p.pid];
+    p.result.fee = ENTRY_FEE;
+    p.rating = p.result.ratingAfter;
+    io.to(p.id).emit('race:result', p.result);
+    sendAccount(p);
+  }
+}
+
 function endRace(room) {
   if (room.status !== 'racing') return;
   clearInterval(room.tickTimer);
@@ -255,6 +305,7 @@ function endRace(room) {
     if (!room.players[i].finished) updateStats(room, room.players[i]);
   }
   room.players.sort(byRank);
+  settleRace(room);
   recordRace(room);
   broadcast(room);
 }
@@ -270,9 +321,12 @@ function joinRoom(socket, room, rawName, pid) {
   }
   const player = { id: socket.id, pid: pid || socket.id, name: name, away: false, awayTimer: null };
   resetPlayer(player);
+  accounts.get(player.pid, name);
+  player.rating = accounts.rating(player.pid);
   room.players.push(player);
   socket.join(room.code);
   socket.data.code = room.code;
+  sendAccount(player);
   broadcast(room);
 }
 
@@ -286,12 +340,18 @@ function rebind(socket, room, p) {
   if (room.hostId === oldId) room.hostId = p.id;
   socket.join(room.code);
   socket.data.code = room.code;
+  sendAccount(p);
 }
 
 function removePlayer(room, p) {
   clearTimeout(p.awayTimer);
   const i = room.players.indexOf(p);
   if (i >= 0) room.players.splice(i, 1);
+  if (room.status === 'countdown' && p.entered) { // race hasn't begun: give the fee back
+    accounts.refund(p.pid, ENTRY_FEE, room.code);
+    room.pot -= ENTRY_FEE;
+    sendAccount(p);
+  }
   if (rooms[room.code] !== room) return;
   if (room.players.length === 0) {
     clearInterval(room.tickTimer);
@@ -381,6 +441,7 @@ function onConnection(socket) {
       limitMs: RACE_MS,
       serverNow: Date.now(),
       input: room.status === 'racing' && !p.finished ? p.input : '',
+      result: p.result,
     });
     broadcast(room);
   }
@@ -388,7 +449,9 @@ function onConnection(socket) {
   function onStart() {
     const room = rooms[socket.data.code];
     if (!room || room.hostId !== socket.id) return; // only the host starts races
-    if (room.status === 'lobby' || room.status === 'finished') startRace(room);
+    if (room.status !== 'lobby' && room.status !== 'finished') return;
+    const error = startRace(room);
+    if (error) socket.emit('race:notice', { message: error });
   }
 
   function onInput(data) {
@@ -405,6 +468,13 @@ function onConnection(socket) {
     leaveRoom(socket);
   }
 
+  function onAccount(data, ack) {
+    if (typeof ack !== 'function') return;
+    const view = accounts.view(cleanPid((data || {}).pid));
+    ack(view ? { ok: true, account: view } : { ok: false });
+  }
+
+  socket.on('account:get', onAccount);
   socket.on('room:create', onCreate);
   socket.on('room:join', onJoin);
   socket.on('race:start', onStart);
