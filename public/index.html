@@ -9,15 +9,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
   <main>
     <!-- Home -->
     <section id="home" class="screen">
       <h1>Type Sprint</h1>
-      <span class="sticker">Up to 8 racers<br>live scoring</span>
-      <p class="lede">Race up to eight people on the same passage. The server counts every keystroke, so the scoreboard is the truth.</p>
+      <span class="sticker">Up to 5 racers<br>live scoring</span>
+      <p class="lede">Race up to five people on the same passage. The server counts every keystroke, so the scoreboard is the truth.</p>
 
       <div class="join-card">
         <label for="name">Your name</label>
@@ -37,11 +37,15 @@
         <li>The host starts the race. Everyone types the same passage.</li>
       </ol>
 
-      <div class="preview" aria-hidden="true">
-        <div class="lane"><span class="rank">1</span><span class="name">Mara</span><div class="track"><div class="fill done" style="width:100%"></div></div><span class="speed"><b>92</b> wpm</span></div>
-        <div class="lane"><span class="rank">2</span><span class="name">Dev</span><div class="track"><div class="fill" style="width:71%"></div></div><span class="speed"><b>84</b> wpm</span></div>
-        <div class="lane"><span class="rank">3</span><span class="name">Ines</span><div class="track"><div class="fill" style="width:38%"></div></div><span class="speed"><b>61</b> wpm</span></div>
-      </div>
+      <!-- Saved races (from this browser) -->
+      <section id="records" class="records" hidden>
+        <div class="records-head">
+          <h2>Your saved races</h2>
+          <button id="clearRecords" class="btn ghost" type="button">Clear</button>
+        </div>
+        <div id="recordBest" class="record-stats"></div>
+        <ol id="recordList" class="record-list"></ol>
+      </section>
     </section>
 
     <!-- Room -->

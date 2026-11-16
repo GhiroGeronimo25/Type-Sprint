@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -7,13 +8,65 @@ const PASSAGES = require('./passages');
 const PORT = process.env.PORT || 3000;
 const COUNTDOWN_MS = 3000; // wait before the race starts
 const RACE_MS = 60000;     // race length
-const MAX_PLAYERS = 8;
+const MAX_PLAYERS = 5;
+const GRACE_MS = 120000;   // how long a disconnected player's seat is held for them
 const MAX_CPS = 25;        // fastest believable typing speed (characters per second)
 
 const app = express();
 const server = http.createServer(app);
 const io = new socketio.Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ---------- saved results (survive restarts) ----------
+const DATA_DIR = path.join(__dirname, 'data');
+const RESULTS_FILE = path.join(DATA_DIR, 'results.json');
+let results = [];
+try {
+  results = JSON.parse(fs.readFileSync(RESULTS_FILE, 'utf8'));
+  if (!Array.isArray(results)) results = [];
+} catch (e) {
+  results = [];
+}
+
+function saveResults() {
+  fs.mkdir(DATA_DIR, { recursive: true }, function (err) {
+    if (err) return console.error('Could not create data folder:', err.message);
+    const tmp = RESULTS_FILE + '.tmp';
+    fs.writeFile(tmp, JSON.stringify(results, null, 2), function (err) {
+      if (err) return console.error('Could not save results:', err.message);
+      fs.rename(tmp, RESULTS_FILE, function (err) {
+        if (err) console.error('Could not save results:', err.message);
+      });
+    });
+  });
+}
+
+function recordRace(room) {
+  let anyone = false;
+  const players = [];
+  for (let i = 0; i < room.players.length; i++) {
+    const p = room.players[i];
+    if (p.correct > 0) anyone = true;
+    players.push({
+      rank: i + 1,
+      name: p.name,
+      wpm: p.wpm,
+      accuracy: p.accuracy,
+      finished: p.finished,
+      progress: Math.round((p.correct / room.text.length) * 1000) / 10,
+      seconds: p.finished ? Math.round((p.finishedAt - room.startAt) / 100) / 10 : null,
+    });
+  }
+  if (!anyone) return;
+  results.push({ room: room.code, endedAt: new Date().toISOString(), text: room.text, players: players });
+  if (results.length > 500) results = results.slice(-500);
+  saveResults();
+}
+
+// the last 50 saved races, newest first
+app.get('/api/results', function (req, res) {
+  res.json(results.slice(-50).reverse());
+});
 
 const rooms = {}; // rooms['ABCD'] = { code, hostId, status, text, startAt, players: [] }
 
@@ -37,6 +90,33 @@ function nameTaken(room, name) {
     if (room.players[i].name === name) return true;
   }
   return false;
+}
+
+function cleanPid(value) {
+  return String(value || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40);
+}
+
+function findByPid(room, pid) {
+  if (!pid) return null;
+  for (let i = 0; i < room.players.length; i++) {
+    if (room.players[i].pid === pid) return room.players[i];
+  }
+  return null;
+}
+
+function findById(room, id) {
+  for (let i = 0; i < room.players.length; i++) {
+    if (room.players[i].id === id) return room.players[i];
+  }
+  return null;
+}
+
+// prefer someone who is still connected
+function pickHost(room) {
+  for (let i = 0; i < room.players.length; i++) {
+    if (!room.players[i].away) return room.players[i].id;
+  }
+  return room.players[0].id;
 }
 
 function allFinished(room) {
@@ -117,6 +197,7 @@ function broadcast(room) {
       wpm: p.wpm,
       accuracy: p.accuracy,
       finished: p.finished,
+      away: !!p.away,
       finishMs: p.finishedAt - room.startAt,
     });
   }
@@ -173,11 +254,13 @@ function endRace(room) {
   for (let i = 0; i < room.players.length; i++) {
     if (!room.players[i].finished) updateStats(room, room.players[i]);
   }
+  room.players.sort(byRank);
+  recordRace(room);
   broadcast(room);
 }
 
 // ---------- joining and leaving ----------
-function joinRoom(socket, room, rawName) {
+function joinRoom(socket, room, rawName, pid) {
   const base = String(rawName || '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Racer';
   let name = base;
   let n = 1;
@@ -185,7 +268,7 @@ function joinRoom(socket, room, rawName) {
     n++;
     name = base + ' ' + n;
   }
-  const player = { id: socket.id, name: name };
+  const player = { id: socket.id, pid: pid || socket.id, name: name, away: false, awayTimer: null };
   resetPlayer(player);
   room.players.push(player);
   socket.join(room.code);
@@ -193,24 +276,56 @@ function joinRoom(socket, room, rawName) {
   broadcast(room);
 }
 
-function leaveRoom(socket) {
-  const room = rooms[socket.data.code];
-  if (!room) return;
-  socket.leave(room.code);
-  socket.data.code = null;
+// a returning player takes their old seat back on a new connection
+function rebind(socket, room, p) {
+  clearTimeout(p.awayTimer);
+  p.awayTimer = null;
+  p.away = false;
+  const oldId = p.id;
+  p.id = socket.id;
+  if (room.hostId === oldId) room.hostId = p.id;
+  socket.join(room.code);
+  socket.data.code = room.code;
+}
 
-  for (let i = 0; i < room.players.length; i++) {
-    if (room.players[i].id === socket.id) room.players.splice(i, 1);
-  }
+function removePlayer(room, p) {
+  clearTimeout(p.awayTimer);
+  const i = room.players.indexOf(p);
+  if (i >= 0) room.players.splice(i, 1);
+  if (rooms[room.code] !== room) return;
   if (room.players.length === 0) {
     clearInterval(room.tickTimer);
     clearTimeout(room.endTimer);
     delete rooms[room.code];
     return;
   }
-  if (room.hostId === socket.id) room.hostId = room.players[0].id;
+  if (room.hostId === p.id) room.hostId = pickHost(room);
   if (room.status === 'racing' && allFinished(room)) endRace(room);
   else broadcast(room);
+}
+
+// leaving on purpose: gone straight away
+function leaveRoom(socket) {
+  const room = rooms[socket.data.code];
+  if (!room) return;
+  socket.leave(room.code);
+  socket.data.code = null;
+  const p = findById(room, socket.id);
+  if (p) removePlayer(room, p);
+}
+
+// connection dropped (closed tab, refresh, bad wifi): hold the seat for a while
+function dropConnection(socket) {
+  const room = rooms[socket.data.code];
+  if (!room) return;
+  const p = findById(room, socket.id);
+  if (!p) return; // this player already reconnected on a newer socket
+  p.away = true;
+  p.awayTimer = setTimeout(function () {
+    removePlayer(room, p);
+  }, GRACE_MS);
+  if (room.hostId === p.id) room.hostId = pickHost(room);
+  broadcast(room);
 }
 
 // ---------- socket events ----------
@@ -221,7 +336,7 @@ function onConnection(socket) {
     if (socket.data.code) return;
     const room = { code: randomCode(), hostId: socket.id, status: 'lobby', text: '', startAt: 0, players: [] };
     rooms[room.code] = room;
-    joinRoom(socket, room, (data || {}).name);
+    joinRoom(socket, room, (data || {}).name, cleanPid((data || {}).pid));
     ack({ ok: true, code: room.code });
   }
 
@@ -229,15 +344,45 @@ function onConnection(socket) {
     data = data || {};
     const code = String(data.code || '').toUpperCase().slice(0, 4);
     const room = rooms[code];
+    const pid = cleanPid(data.pid);
+    const existing = room && findByPid(room, pid);
+    const started = room && (room.status === 'countdown' || room.status === 'racing');
     let error = '';
     if (socket.data.code) error = 'You are already in a room.';
     else if (!room) error = 'No room with code ' + code + '.';
-    else if (room.status === 'countdown' || room.status === 'racing') error = 'That race has already started.';
-    else if (room.players.length >= MAX_PLAYERS) error = 'That room is full.';
+    else if (existing && started) error = 'You are already in this race. Reload the page to get back in.';
+    else if (existing) {
+      rebind(socket, room, existing);
+      broadcast(room);
+      return ack({ ok: true, code: code });
+    } else if (started) error = 'That race has already started.';
+    else if (room.players.length >= MAX_PLAYERS) error = 'That room is full (' + MAX_PLAYERS + ' players max).';
 
     if (error) return ack({ ok: false, error: error });
-    joinRoom(socket, room, data.name);
+    joinRoom(socket, room, data.name, pid);
     ack({ ok: true, code: code });
+  }
+
+  function onRejoin(data, ack) {
+    if (typeof ack !== 'function') return;
+    data = data || {};
+    const room = rooms[String(data.code || '').toUpperCase().slice(0, 4)];
+    const p = room && findByPid(room, cleanPid(data.pid));
+    if (!p) return ack({ ok: false, error: 'That room no longer exists.' });
+    if (socket.data.code && socket.data.code !== room.code) return ack({ ok: false, error: 'You are already in a room.' });
+
+    rebind(socket, room, p);
+    ack({
+      ok: true,
+      code: room.code,
+      status: room.status,
+      text: room.status === 'lobby' ? '' : room.text,
+      startAt: room.startAt,
+      limitMs: RACE_MS,
+      serverNow: Date.now(),
+      input: room.status === 'racing' && !p.finished ? p.input : '',
+    });
+    broadcast(room);
   }
 
   function onStart() {
@@ -264,8 +409,11 @@ function onConnection(socket) {
   socket.on('room:join', onJoin);
   socket.on('race:start', onStart);
   socket.on('race:input', onInput);
+  socket.on('room:rejoin', onRejoin);
   socket.on('room:leave', onLeave);
-  socket.on('disconnect', onLeave);
+  socket.on('disconnect', function () {
+    dropConnection(socket);
+  });
 }
 
 io.on('connection', onConnection);

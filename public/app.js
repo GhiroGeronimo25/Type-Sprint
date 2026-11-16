@@ -4,8 +4,19 @@ function $(id) {
   return document.getElementById(id);
 }
 
+// a permanent id for this browser, so the server can recognise us after a refresh or reconnect
+function getPid() {
+  let id = localStorage.getItem('pid');
+  if (!id) {
+    id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
+    localStorage.setItem('pid', id);
+  }
+  return id;
+}
+const pid = getPid();
+
 // what the screen remembers between server updates
-const state = { room: null, text: '', startAt: 0, limitMs: 120000, offset: 0, chars: [] };
+const state = { room: null, text: '', startAt: 0, limitMs: 60000, offset: 0, chars: [], restore: '' };
 
 // ---------- helpers ----------
 function esc(text) {
@@ -58,6 +69,7 @@ function goHome() {
   $('typing').disabled = true;
   history.replaceState(null, '', location.pathname);
   showScreen('home');
+  renderRecords();
 }
 
 // ---------- home screen ----------
@@ -68,16 +80,17 @@ if (urlRoom) $('code').value = urlRoom.toUpperCase().slice(0, 4);
 function onEntered(result) {
   if (!result.ok) return showToast(result.error);
   localStorage.setItem('name', $('name').value);
+  localStorage.setItem('session', result.code);
   history.replaceState(null, '', '?room=' + result.code);
   showScreen('room');
 }
 
 function createRoom() {
-  socket.emit('room:create', { name: $('name').value }, onEntered);
+  socket.emit('room:create', { name: $('name').value, pid: pid }, onEntered);
 }
 
 function joinRoom() {
-  socket.emit('room:join', { name: $('name').value, code: $('code').value }, onEntered);
+  socket.emit('room:join', { name: $('name').value, code: $('code').value, pid: pid }, onEntered);
 }
 
 function onHomeKey(event) {
@@ -87,6 +100,7 @@ function onHomeKey(event) {
 }
 
 function leaveRoom() {
+  localStorage.removeItem('session');
   socket.emit('room:leave');
   goHome();
 }
@@ -105,6 +119,68 @@ $('code').addEventListener('keydown', onHomeKey);
 $('leave').addEventListener('click', leaveRoom);
 $('copyLink').addEventListener('click', copyLink);
 
+// ---------- saved races (kept in this browser) ----------
+function loadRecords() {
+  try {
+    return JSON.parse(localStorage.getItem('records')) || [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveRecord(room, me, rank) {
+  if (room.status !== 'finished' || (!me.finished && me.wpm === 0)) return;
+  const id = room.code + ':' + room.startAt;
+  const list = loadRecords();
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].id === id) return;
+  }
+  list.unshift({
+    id: id,
+    date: Date.now(),
+    rank: rank,
+    players: room.players.length,
+    wpm: me.wpm,
+    accuracy: me.accuracy,
+    finished: me.finished,
+    progress: me.progress,
+    seconds: me.finished ? me.finishMs / 1000 : null,
+  });
+  localStorage.setItem('records', JSON.stringify(list.slice(0, 30)));
+}
+
+function renderRecords() {
+  const list = loadRecords();
+  $('records').hidden = list.length === 0;
+  if (!list.length) return;
+  let best = 0;
+  let wins = 0;
+  let html = '';
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].wpm > best) best = list[i].wpm;
+    if (list[i].finished && list[i].rank === 1) wins++;
+  }
+  $('recordBest').innerHTML = '<div><b>' + best + '</b><span>best WPM</span></div>' +
+    '<div><b>' + list.length + '</b><span>races saved</span></div>' +
+    '<div><b>' + wins + '</b><span>wins</span></div>';
+  for (let i = 0; i < Math.min(list.length, 5); i++) {
+    const r = list[i];
+    const when = new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const result = r.finished ? (r.seconds.toFixed(1) + 's') : (Math.round(r.progress * 100) + '% done');
+    html += '<li><span class="rr">' + ordinal(r.rank) + '</span><b>' + r.wpm + '</b> wpm' +
+      '<span>' + r.accuracy + '% acc</span><span>' + result + '</span><span class="when">' + when + '</span></li>';
+  }
+  $('recordList').innerHTML = html;
+}
+
+function clearRecords() {
+  localStorage.removeItem('records');
+  renderRecords();
+}
+
+$('clearRecords').addEventListener('click', clearRecords);
+renderRecords();
+
 // ---------- messages from the server ----------
 function onRoomState(snapshot) {
   state.room = snapshot;
@@ -117,6 +193,7 @@ function onCountdown(data) {
   state.startAt = data.startAt;
   state.limitMs = data.limitMs;
   state.offset = data.serverNow - Date.now();
+  state.restore = '';
   $('typing').value = '';
   buildPassage();
 }
@@ -128,11 +205,41 @@ function onResync(data) {
 }
 
 function onDisconnect() {
-  if (!state.room) return;
-  goHome();
-  showToast('Connection lost. Create or join a room again.');
+  if (state.room) showToast('Connection lost. Reconnecting...');
 }
 
+// on every (re)connect, take our seat back if we were in a room
+function onConnect() {
+  const code = localStorage.getItem('session');
+  if (!code) return;
+  if (urlRoom && urlRoom.toUpperCase().slice(0, 4) !== code) return; // opened an invite to another room
+  socket.emit('room:rejoin', { code: code, pid: pid }, onRejoined);
+}
+
+function onRejoined(result) {
+  if (!result.ok) {
+    localStorage.removeItem('session');
+    if (state.room) {
+      goHome();
+      showToast(result.error);
+    }
+    return;
+  }
+  state.text = result.text || '';
+  state.startAt = result.startAt;
+  state.limitMs = result.limitMs;
+  state.offset = result.serverNow - Date.now();
+  state.restore = $('typing').disabled ? result.input : '';
+  if (state.text) buildPassage();
+  history.replaceState(null, '', '?room=' + result.code);
+  showScreen('room');
+  if (state.room) {
+    showToast('Back in the room');
+    render();
+  }
+}
+
+socket.on('connect', onConnect);
 socket.on('room:state', onRoomState);
 socket.on('race:countdown', onCountdown);
 socket.on('race:resync', onResync);
@@ -165,12 +272,15 @@ function render() {
   // you can only type while the race is on and you haven't finished
   const canType = room.status === 'racing' && !me.finished;
   if (canType && $('typing').disabled) {
+    const restore = state.restore;
+    state.restore = '';
     $('typing').disabled = false;
-    $('typing').value = '';
-    updatePassage('');
+    $('typing').value = restore;
+    updatePassage(restore);
     $('typing').focus();
   }
   if (!canType) $('typing').disabled = true;
+  saveRecord(room, me, index + 1);
 }
 
 function renderLanes(room) {
@@ -184,6 +294,7 @@ function renderLanes(room) {
       name += ' <small>(you)</small>';
     }
     if (p.finished) cls += ' finished';
+    if (p.away) cls += ' left';
     html += '<div class="' + cls + '">' +
       '<span class="rank">' + (i + 1) + '</span>' +
       '<span class="name">' + name + '</span>' +
