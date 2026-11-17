@@ -86,7 +86,8 @@ function onEntered(result) {
 }
 
 function createRoom() {
-  socket.emit('room:create', { name: $('name').value, pid: pid }, onEntered);
+  const mode = document.querySelector('input[name="mode"]:checked');
+  socket.emit('room:create', { name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked' }, onEntered);
 }
 
 function joinRoom() {
@@ -305,7 +306,7 @@ function render() {
   };
 
   $('roomCode').textContent = room.code;
-  $('status').textContent = labels[room.status];
+  $('status').textContent = labels[room.status] + (room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual');
   $('stats').hidden = room.status === 'lobby';
   $('passage').hidden = room.status === 'lobby' || !state.text;
   $('hint').hidden = room.status !== 'racing';
@@ -361,7 +362,9 @@ function renderPanel(room, me, rank) {
 
   if (room.status === 'lobby') {
     html = '<h2>Waiting for racers</h2><p>Share the code <strong>' + room.code +
-      '</strong> or click it above to copy an invite link. Entry is ' + room.fee + ' coins per racer. Starting alone just returns your own fee.</p>';
+      '</strong> or click it above to copy an invite link. ' + (room.ranked
+        ? 'Ranked: entry is ' + room.fee + ' coins per racer, and your rating changes. Starting alone just returns your own fee.'
+        : 'Casual: free to play. No coins are spent or won and ratings do not change.') + '</p>';
     if (isHost) html += '<button id="start" class="btn" type="button">Start race</button>';
     else html += '<p>Waiting for the host to start.</p>';
   } else if (room.status === 'countdown') {
@@ -378,6 +381,7 @@ function renderPanel(room, me, rank) {
     }
     if (winner.finished && winner.id !== me.id) html += ' ' + esc(winner.name) + ' won at ' + winner.wpm + ' WPM.';
     html += '</p>' + resultHtml(me);
+    if (!room.ranked) html += '<p class="muted">Casual race: no coins or rating changed.</p>';
     if (isHost) html += '<button id="start" class="btn" type="button">Race again</button>';
     else html += '<p>Waiting for the host to start another race.</p>';
   }

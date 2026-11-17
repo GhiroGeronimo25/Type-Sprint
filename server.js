@@ -64,7 +64,7 @@ function recordRace(room) {
     });
   }
   if (!anyone) return;
-  results.push({ room: room.code, endedAt: new Date().toISOString(), text: room.text, players: players });
+  results.push({ room: room.code, ranked: room.ranked, endedAt: new Date().toISOString(), text: room.text, players: players });
   if (results.length > 500) results = results.slice(-500);
   saveResults();
 }
@@ -218,6 +218,7 @@ function broadcast(room) {
     hostId: room.hostId,
     startAt: room.startAt,
     serverNow: Date.now(),
+    ranked: room.ranked,
     fee: ENTRY_FEE,
     pot: room.pot || 0,
     players: players,
@@ -235,41 +236,47 @@ function sendAccount(p) {
   }).catch(logError('Could not load account ' + p.pid));
 }
 
-// Resolves to an error message if the race can't start. Entry fees of everyone who can pay are moved
-// into the race pot in one database transaction (all or nothing); racers with too few coins stay
-// in the room and watch.
+// Resolves to an error message if the race can't start.
+// Ranked: entry fees of everyone who can pay are moved into the race pot in one database transaction
+// (all or nothing); racers with too few coins stay in the room and watch.
+// Casual: free for everyone, no pot, no coins or rating change, and no database calls.
 async function startRace(room) {
-  room.starting = true; // blocks a second start (and new joiners) while the fees are being collected
-  let collected;
-  try {
-    collected = await accounts.collectEntries(room.code, room.players.map(function (p) { return p.pid; }), ENTRY_FEE);
-  } catch (e) {
+  let entered;
+  if (!room.ranked) {
+    entered = room.players.map(function (p) { return p.pid; });
+  } else {
+    room.starting = true; // blocks a second start (and new joiners) while the fees are being collected
+    let collected;
+    try {
+      collected = await accounts.collectEntries(room.code, room.players.map(function (p) { return p.pid; }), ENTRY_FEE);
+    } catch (e) {
+      room.starting = false;
+      console.error('Could not collect entry fees for ' + room.code + ':', e.message);
+      return 'Could not collect the entry fees. Nobody was charged, please try again.';
+    }
+
     room.starting = false;
-    console.error('Could not collect entry fees for ' + room.code + ':', e.message);
-    return 'Could not collect the entry fees. Nobody was charged, please try again.';
-  }
+    if (rooms[room.code] !== room) { // everyone left while the fees were being collected
+      if (collected.entered.length > 0) accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
+      return '';
+    }
 
-  room.starting = false;
-  if (rooms[room.code] !== room) { // everyone left while the fees were being collected
-    if (collected.entered.length > 0) accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
-    return '';
-  }
-
-  // racers who left in the meantime get their fee back
-  const here = room.players.map(function (p) { return p.pid; });
-  const entered = collected.entered.filter(function (pid) { return here.indexOf(pid) >= 0; });
-  collected.entered.forEach(function (pid) {
-    if (here.indexOf(pid) < 0) accounts.refundEntry(room.code, pid).catch(logError('Could not refund ' + pid));
-  });
-  if (entered.length === 0) {
-    if (collected.entered.length > 0) return 'Everyone who paid left, so the race was cancelled.';
-    return 'Nobody has ' + ENTRY_FEE + ' coins for the entry fee.';
+    // racers who left in the meantime get their fee back
+    const here = room.players.map(function (p) { return p.pid; });
+    entered = collected.entered.filter(function (pid) { return here.indexOf(pid) >= 0; });
+    collected.entered.forEach(function (pid) {
+      if (here.indexOf(pid) < 0) accounts.refundEntry(room.code, pid).catch(logError('Could not refund ' + pid));
+    });
+    if (entered.length === 0) {
+      if (collected.entered.length > 0) return 'Everyone who paid left, so the race was cancelled.';
+      return 'Nobody has ' + ENTRY_FEE + ' coins for the entry fee.';
+    }
   }
 
   room.text = PASSAGES[Math.floor(Math.random() * PASSAGES.length)];
   room.status = 'countdown';
   room.startAt = Date.now() + COUNTDOWN_MS;
-  room.pot = entered.length * ENTRY_FEE;
+  room.pot = room.ranked ? entered.length * ENTRY_FEE : 0;
   for (let i = 0; i < room.players.length; i++) {
     const p = room.players[i];
     resetPlayer(p);
@@ -312,6 +319,7 @@ function beginRacing(room) {
 
 // pay prizes and update ratings, once per race
 async function settleRace(room) {
+  if (!room.ranked) return; // casual races pay nothing and change no ratings
   const ranked = room.players.filter(function (p) { return p.entered; });
   if (ranked.length === 0) return;
   let outcome;
@@ -401,7 +409,7 @@ function removePlayer(room, p) {
   clearTimeout(p.awayTimer);
   const i = room.players.indexOf(p);
   if (i >= 0) room.players.splice(i, 1);
-  if (room.status === 'countdown' && p.entered) { // race hasn't begun: give the fee back
+  if (room.ranked && room.status === 'countdown' && p.entered) { // race hasn't begun: give the fee back
     p.entered = false;
     room.pot = Math.max(0, (room.pot || 0) - ENTRY_FEE);
     accounts.refundEntry(room.code, p.pid).then(function () {
@@ -413,7 +421,7 @@ function removePlayer(room, p) {
     clearInterval(room.tickTimer);
     clearTimeout(room.endTimer);
     delete rooms[room.code];
-    if (room.status === 'countdown' || room.status === 'racing') { // everyone left mid-race: return what is still in the pot
+    if (room.ranked && (room.status === 'countdown' || room.status === 'racing')) { // everyone left mid-race: return what is still in the pot
       accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
     }
     return;
@@ -453,7 +461,8 @@ function onConnection(socket) {
 
   async function onCreate(data, ack) {
     if (socket.data.code) return;
-    const room = { code: randomCode(), hostId: socket.id, status: 'lobby', text: '', startAt: 0, players: [] };
+    const ranked = (data || {}).ranked !== false; // ranked unless the host picked casual
+    const room = { code: randomCode(), hostId: socket.id, ranked: ranked, status: 'lobby', text: '', startAt: 0, players: [] };
     rooms[room.code] = room;
     const player = joinRoom(socket, room, (data || {}).name, cleanPid((data || {}).pid));
     try {

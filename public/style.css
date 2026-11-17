@@ -464,3 +464,9 @@ input[type="text"]:focus { outline: none; background: #fff; box-shadow: 4px 4px 
 .panel .payout .in { color: #07694a; }
 @media (min-width: 1000px) { #home .wallet { grid-column: 1; grid-row: 4; margin: 2.5rem 0 0; } #home .records { grid-row: 5; } }
 @media (max-width: 560px) { .wallet { padding: 1rem; } .wallet h2 { font-size: 1.4rem; } }
+
+/* race type picker */
+.mode { border: 0; margin: 1.1rem 0 0; padding: 0; display: grid; gap: 0.4rem; }
+.mode legend { padding: 0; margin-bottom: 0.3rem; font-weight: 700; font-size: 0.85rem; color: var(--muted); }
+.mode label { display: flex; align-items: baseline; gap: 0.5rem; cursor: pointer; }
+.mode small { color: var(--muted); }

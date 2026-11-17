@@ -23,6 +23,12 @@
         <label for="name">Your name</label>
         <input id="name" type="text" maxlength="16" autocomplete="nickname" placeholder="Racer">
 
+        <fieldset class="mode">
+          <legend>Race type (for a room you create)</legend>
+          <label><input type="radio" name="mode" value="ranked" checked> <b>Ranked</b> <small>entry fee, prizes, rating changes</small></label>
+          <label><input type="radio" name="mode" value="casual"> <b>Casual</b> <small>free, no coins or rating</small></label>
+        </fieldset>
+
         <div class="actions">
           <button id="create" class="btn" type="button">Create room</button>
           <span class="or">or</span>
@@ -35,7 +41,7 @@
       <section id="wallet" class="wallet" hidden>
         <h2>Your wallet</h2>
         <div id="walletStats" class="record-stats"></div>
-        <p class="wallet-note">Entry costs <b id="feeNote">50</b> coins per race. The prize pool is split among the racers who finish highest.</p>
+        <p class="wallet-note">Ranked races cost <b id="feeNote">50</b> coins to enter. The prize pool is split among the racers who finish highest.</p>
         <ol id="ledger" class="ledger"></ol>
       </section>
 
