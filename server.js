@@ -1,3 +1,4 @@
+require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -21,7 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ---------- saved results (survive restarts) ----------
 const DATA_DIR = path.join(__dirname, 'data');
 const RESULTS_FILE = path.join(DATA_DIR, 'results.json');
-const accounts = createAccounts(path.join(DATA_DIR, 'accounts.json'));
+const accounts = createAccounts(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const ENTRY_FEE = accounts.ENTRY_FEE;
 let results = [];
 try {
@@ -224,26 +225,56 @@ function broadcast(room) {
 }
 
 // ---------- race flow ----------
-function sendAccount(p) {
-  io.to(p.id).emit('account:state', accounts.view(p.pid));
+function logError(what) {
+  return function (e) { console.error(what + ':', e.message); };
 }
 
-// Returns an error message if the race can't start. Charges the entry fee of everyone who can pay;
-// racers with too few coins stay in the room and watch.
-function startRace(room) {
-  const payers = room.players.filter(function (p) { return accounts.canAfford(p.pid, ENTRY_FEE); });
-  if (payers.length === 0) return 'Nobody has ' + ENTRY_FEE + ' coins for the entry fee.';
+function sendAccount(p) {
+  accounts.view(p.pid).then(function (view) {
+    if (view) io.to(p.id).emit('account:state', view);
+  }).catch(logError('Could not load account ' + p.pid));
+}
+
+// Resolves to an error message if the race can't start. Entry fees of everyone who can pay are moved
+// into the race pot in one database transaction (all or nothing); racers with too few coins stay
+// in the room and watch.
+async function startRace(room) {
+  room.starting = true; // blocks a second start (and new joiners) while the fees are being collected
+  let collected;
+  try {
+    collected = await accounts.collectEntries(room.code, room.players.map(function (p) { return p.pid; }), ENTRY_FEE);
+  } catch (e) {
+    room.starting = false;
+    console.error('Could not collect entry fees for ' + room.code + ':', e.message);
+    return 'Could not collect the entry fees. Nobody was charged, please try again.';
+  }
+
+  room.starting = false;
+  if (rooms[room.code] !== room) { // everyone left while the fees were being collected
+    if (collected.entered.length > 0) accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
+    return '';
+  }
+
+  // racers who left in the meantime get their fee back
+  const here = room.players.map(function (p) { return p.pid; });
+  const entered = collected.entered.filter(function (pid) { return here.indexOf(pid) >= 0; });
+  collected.entered.forEach(function (pid) {
+    if (here.indexOf(pid) < 0) accounts.refundEntry(room.code, pid).catch(logError('Could not refund ' + pid));
+  });
+  if (entered.length === 0) {
+    if (collected.entered.length > 0) return 'Everyone who paid left, so the race was cancelled.';
+    return 'Nobody has ' + ENTRY_FEE + ' coins for the entry fee.';
+  }
 
   room.text = PASSAGES[Math.floor(Math.random() * PASSAGES.length)];
   room.status = 'countdown';
   room.startAt = Date.now() + COUNTDOWN_MS;
-  room.pot = 0;
+  room.pot = entered.length * ENTRY_FEE;
   for (let i = 0; i < room.players.length; i++) {
     const p = room.players[i];
     resetPlayer(p);
-    if (accounts.charge(p.pid, ENTRY_FEE, room.code)) {
+    if (entered.indexOf(p.pid) >= 0) {
       p.entered = true;
-      room.pot += ENTRY_FEE;
     } else {
       io.to(p.id).emit('race:notice', { message: 'You need ' + ENTRY_FEE + ' coins to enter. You are watching this one.' });
     }
@@ -280,12 +311,24 @@ function beginRacing(room) {
 }
 
 // pay prizes and update ratings, once per race
-function settleRace(room) {
+async function settleRace(room) {
   const ranked = room.players.filter(function (p) { return p.entered; });
   if (ranked.length === 0) return;
-  const outcome = accounts.settle(room.code, ranked.map(function (p) {
-    return { pid: p.pid, active: p.correct > 0 };
-  }), ENTRY_FEE, room.pot);
+  let outcome;
+  try {
+    outcome = await accounts.settle(room.code, ranked.map(function (p) {
+      return { pid: p.pid, active: p.correct > 0 };
+    }));
+  } catch (e) {
+    // the transaction was rolled back: nothing was paid, so return the fees instead of losing them
+    console.error('Could not settle race ' + room.code + ':', e.message);
+    await accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
+    ranked.forEach(function (p) {
+      io.to(p.id).emit('race:notice', { message: 'Something went wrong paying out this race. Your entry fee was returned.' });
+      sendAccount(p);
+    });
+    return;
+  }
   for (let i = 0; i < ranked.length; i++) {
     const p = ranked[i];
     p.result = outcome[p.pid];
@@ -305,9 +348,13 @@ function endRace(room) {
     if (!room.players[i].finished) updateStats(room, room.players[i]);
   }
   room.players.sort(byRank);
-  settleRace(room);
-  recordRace(room);
   broadcast(room);
+  room.settling = true; // the payout is in flight: no new race until it is done
+  settleRace(room).catch(logError('Could not settle race ' + room.code)).then(function () {
+    room.settling = false;
+    recordRace(room);
+    broadcast(room);
+  });
 }
 
 // ---------- joining and leaving ----------
@@ -321,12 +368,19 @@ function joinRoom(socket, room, rawName, pid) {
   }
   const player = { id: socket.id, pid: pid || socket.id, name: name, away: false, awayTimer: null };
   resetPlayer(player);
-  accounts.get(player.pid, name);
-  player.rating = accounts.rating(player.pid);
+  player.rating = 1000; // replaced by the real rating once the account has loaded
   room.players.push(player);
   socket.join(room.code);
   socket.data.code = room.code;
-  sendAccount(player);
+  broadcast(room);
+  return player;
+}
+
+// creates the account on first visit and loads the rating; the player's seat is already held
+async function registerPlayer(room, player) {
+  const view = await accounts.join(player.pid, player.name);
+  player.rating = view.rating;
+  io.to(player.id).emit('account:state', view);
   broadcast(room);
 }
 
@@ -348,15 +402,20 @@ function removePlayer(room, p) {
   const i = room.players.indexOf(p);
   if (i >= 0) room.players.splice(i, 1);
   if (room.status === 'countdown' && p.entered) { // race hasn't begun: give the fee back
-    accounts.refund(p.pid, ENTRY_FEE, room.code);
-    room.pot -= ENTRY_FEE;
-    sendAccount(p);
+    p.entered = false;
+    room.pot = Math.max(0, (room.pot || 0) - ENTRY_FEE);
+    accounts.refundEntry(room.code, p.pid).then(function () {
+      sendAccount(p);
+    }).catch(logError('Could not refund ' + p.pid));
   }
   if (rooms[room.code] !== room) return;
   if (room.players.length === 0) {
     clearInterval(room.tickTimer);
     clearTimeout(room.endTimer);
     delete rooms[room.code];
+    if (room.status === 'countdown' || room.status === 'racing') { // everyone left mid-race: return what is still in the pot
+      accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
+    }
     return;
   }
   if (room.hostId === p.id) room.hostId = pickHost(room);
@@ -392,21 +451,28 @@ function dropConnection(socket) {
 function onConnection(socket) {
   socket.data.code = null;
 
-  function onCreate(data, ack) {
+  async function onCreate(data, ack) {
     if (socket.data.code) return;
     const room = { code: randomCode(), hostId: socket.id, status: 'lobby', text: '', startAt: 0, players: [] };
     rooms[room.code] = room;
-    joinRoom(socket, room, (data || {}).name, cleanPid((data || {}).pid));
+    const player = joinRoom(socket, room, (data || {}).name, cleanPid((data || {}).pid));
+    try {
+      await registerPlayer(room, player);
+    } catch (e) {
+      console.error('Could not create account:', e.message);
+      leaveRoom(socket);
+      return ack({ ok: false, error: 'Could not reach the account service. Please try again.' });
+    }
     ack({ ok: true, code: room.code });
   }
 
-  function onJoin(data, ack) {
+  async function onJoin(data, ack) {
     data = data || {};
     const code = String(data.code || '').toUpperCase().slice(0, 4);
     const room = rooms[code];
     const pid = cleanPid(data.pid);
     const existing = room && findByPid(room, pid);
-    const started = room && (room.status === 'countdown' || room.status === 'racing');
+    const started = room && (room.starting || room.status === 'countdown' || room.status === 'racing');
     let error = '';
     if (socket.data.code) error = 'You are already in a room.';
     else if (!room) error = 'No room with code ' + code + '.';
@@ -419,7 +485,14 @@ function onConnection(socket) {
     else if (room.players.length >= MAX_PLAYERS) error = 'That room is full (' + MAX_PLAYERS + ' players max).';
 
     if (error) return ack({ ok: false, error: error });
-    joinRoom(socket, room, data.name, pid);
+    const player = joinRoom(socket, room, data.name, pid);
+    try {
+      await registerPlayer(room, player);
+    } catch (e) {
+      console.error('Could not create account:', e.message);
+      leaveRoom(socket);
+      return ack({ ok: false, error: 'Could not reach the account service. Please try again.' });
+    }
     ack({ ok: true, code: code });
   }
 
@@ -446,11 +519,13 @@ function onConnection(socket) {
     broadcast(room);
   }
 
-  function onStart() {
+  async function onStart() {
     const room = rooms[socket.data.code];
     if (!room || room.hostId !== socket.id) return; // only the host starts races
     if (room.status !== 'lobby' && room.status !== 'finished') return;
-    const error = startRace(room);
+    if (room.starting) return;
+    if (room.settling) return socket.emit('race:notice', { message: 'Still paying out the last race. Try again in a second.' });
+    const error = await startRace(room);
     if (error) socket.emit('race:notice', { message: error });
   }
 
@@ -470,14 +545,18 @@ function onConnection(socket) {
 
   function onAccount(data, ack) {
     if (typeof ack !== 'function') return;
-    const view = accounts.view(cleanPid((data || {}).pid));
-    ack(view ? { ok: true, account: view } : { ok: false });
+    accounts.view(cleanPid((data || {}).pid)).then(function (view) {
+      ack(view ? { ok: true, account: view } : { ok: false });
+    }).catch(function (e) {
+      console.error('Could not load account:', e.message);
+      ack({ ok: false });
+    });
   }
 
   socket.on('account:get', onAccount);
-  socket.on('room:create', onCreate);
-  socket.on('room:join', onJoin);
-  socket.on('race:start', onStart);
+  socket.on('room:create', function (data, ack) { onCreate(data, ack).catch(logError('room:create')); });
+  socket.on('room:join', function (data, ack) { onJoin(data, ack).catch(logError('room:join')); });
+  socket.on('race:start', function () { onStart().catch(logError('race:start')); });
   socket.on('race:input', onInput);
   socket.on('room:rejoin', onRejoin);
   socket.on('room:leave', onLeave);
@@ -488,6 +567,13 @@ function onConnection(socket) {
 
 io.on('connection', onConnection);
 
-server.listen(PORT, function () {
-  console.log('Type Sprint running at http://localhost:' + PORT);
+// races that were running when the server stopped never finish: give those entry fees back, then open up
+accounts.voidAllPots().then(function (count) {
+  if (count > 0) console.log('Returned ' + count + ' unfinished race pot(s).');
+}).catch(function (e) {
+  console.error('Could not return old pots (is the database set up?):', e.message);
+}).then(function () {
+  server.listen(PORT, function () {
+    console.log('Type Sprint running at http://localhost:' + PORT);
+  });
 });
