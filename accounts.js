@@ -70,16 +70,37 @@ function createAccounts(url, serviceKey) {
     return call('void_all_pots', {});
   }
 
-  // Pays out one finished race from its pot, in ONE transaction (prizes, ratings, closing the pot).
-  // ranked: [{ pid, active }] in finishing order. Resolves to { [pid]: { rank, payout, net, ratingBefore, ratingAfter, ratingDelta } }
-  async function settle(code, ranked) {
-    return call('settle_race', { p_code: code, p_ranked: ranked });
+  // Ends one ranked race in ONE transaction: the pot is split by placement (60/30/10), every rating is
+  // updated, the results are saved and the pot is closed. If any step fails, none of it happens.
+  // ranked: [{ pid, active, name, wpm, accuracy, finished, progress, seconds }] in finishing order.
+  // Resolves to { [pid]: { rank, payout, net, ratingBefore, ratingAfter, ratingDelta } }
+  async function settle(code, ranked, text) {
+    return call('settle_race', { p_code: code, p_ranked: ranked, p_text: text || '' });
+  }
+
+  // the latest saved ranked races, newest first
+  async function recentResults(limit) {
+    const res = await db.from('race_results')
+      .select('id, room, ranked, text, ended_at, race_result_players(rank, name, wpm, accuracy, finished, progress, seconds, payout)')
+      .order('id', { ascending: false })
+      .limit(limit || 50);
+    if (res.error) throw new Error('race_results query failed: ' + res.error.message);
+    return res.data.map(function (r) {
+      const players = r.race_result_players.slice().sort(function (a, b) { return a.rank - b.rank; });
+      return {
+        room: r.room, ranked: r.ranked, endedAt: r.ended_at, text: r.text,
+        players: players.map(function (p) {
+          return { rank: p.rank, coins: p.payout, name: p.name, wpm: p.wpm, accuracy: Number(p.accuracy),
+                   finished: p.finished, progress: Number(p.progress), seconds: p.seconds === null ? null : Number(p.seconds) };
+        }),
+      };
+    });
   }
 
   return {
     join: join, view: view,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
-    settle: settle, ENTRY_FEE: ENTRY_FEE,
+    settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,
   };
 }
 

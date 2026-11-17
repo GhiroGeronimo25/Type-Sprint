@@ -8,8 +8,8 @@ const PASSAGES = require('./passages');
 const createAccounts = require('./accounts');
 
 const PORT = process.env.PORT || 3000;
-const COUNTDOWN_MS = 3000; // wait before the race starts
-const RACE_MS = 60000;     // race length
+const COUNTDOWN_MS = Number(process.env.COUNTDOWN_MS) || 3000; // wait before the race starts (env override is for tests)
+const RACE_MS = Number(process.env.RACE_MS) || 60000;           // race length
 const MAX_PLAYERS = 5;
 const GRACE_MS = 120000;   // how long a disconnected player's seat is held for them
 const MAX_CPS = 25;        // fastest believable typing speed (characters per second)
@@ -71,7 +71,14 @@ function recordRace(room) {
 
 // the last 50 saved races, newest first
 app.get('/api/results', function (req, res) {
-  res.json(results.slice(-50).reverse());
+  accounts.recentResults(50).catch(function (e) {
+    console.error('Could not load saved races:', e.message);
+    return [];
+  }).then(function (ranked) {
+    const all = ranked.concat(results.slice(-50)); // ranked from the database, casual from the local file
+    all.sort(function (a, b) { return String(b.endedAt).localeCompare(String(a.endedAt)); });
+    res.json(all.slice(0, 50));
+  });
 });
 
 const rooms = {}; // rooms['ABCD'] = { code, hostId, status, text, startAt, players: [] }
@@ -151,6 +158,7 @@ function resetPlayer(p) {
   p.finished = false;
   p.finishedAt = 0;
   p.entered = false; // paid the entry fee for this race
+  p.forfeited = false; // paid, but disconnected (or left) once the race had begun: the fee stays in the pot
   p.result = null;   // coins and rating change once the race is over
 }
 
@@ -207,6 +215,7 @@ function broadcast(room) {
       accuracy: p.accuracy,
       finished: p.finished,
       entered: p.entered,
+      forfeited: !!p.forfeited,
       rating: p.rating,
       away: !!p.away,
       finishMs: p.finishedAt - room.startAt,
@@ -281,7 +290,8 @@ async function startRace(room) {
     const p = room.players[i];
     resetPlayer(p);
     if (entered.indexOf(p.pid) >= 0) {
-      p.entered = true;
+      if (room.ranked && p.away) p.forfeited = true; // already disconnected: paid in, but out of the race
+      else p.entered = true;
     } else {
       io.to(p.id).emit('race:notice', { message: 'You need ' + ENTRY_FEE + ' coins to enter. You are watching this one.' });
     }
@@ -306,6 +316,7 @@ function beginRacing(room) {
   if (rooms[room.code] !== room) return; // everyone left during the countdown
   room.status = 'racing';
   broadcast(room);
+  if (allFinished(room)) return endRace(room); // everyone who paid has already disconnected
   room.tickTimer = setInterval(function () {
     for (let i = 0; i < room.players.length; i++) {
       if (!room.players[i].finished) updateStats(room, room.players[i]);
@@ -321,12 +332,26 @@ function beginRacing(room) {
 async function settleRace(room) {
   if (!room.ranked) return; // casual races pay nothing and change no ratings
   const ranked = room.players.filter(function (p) { return p.entered; });
-  if (ranked.length === 0) return;
+  if (ranked.length === 0) {
+    // everyone who paid disconnected or left: there is nobody to pay, so the race is cancelled and every fee goes back
+    await accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
+    return;
+  }
   let outcome;
   try {
+    // one transaction: split the pot by placement, update every rating, save the results
     outcome = await accounts.settle(room.code, ranked.map(function (p) {
-      return { pid: p.pid, active: p.correct > 0 };
-    }));
+      return {
+        pid: p.pid,
+        active: p.correct > 0,
+        name: p.name,
+        wpm: p.wpm,
+        accuracy: p.accuracy,
+        finished: p.finished,
+        progress: Math.round((p.correct / room.text.length) * 1000) / 10,
+        seconds: p.finished ? Math.round((p.finishedAt - room.startAt) / 100) / 10 : null,
+      };
+    }), room.text);
   } catch (e) {
     // the transaction was rolled back: nothing was paid, so return the fees instead of losing them
     console.error('Could not settle race ' + room.code + ':', e.message);
@@ -360,7 +385,7 @@ function endRace(room) {
   room.settling = true; // the payout is in flight: no new race until it is done
   settleRace(room).catch(logError('Could not settle race ' + room.code)).then(function () {
     room.settling = false;
-    recordRace(room);
+    if (!room.ranked) recordRace(room); // ranked results were saved inside the payout transaction
     broadcast(room);
   });
 }
@@ -402,6 +427,9 @@ function rebind(socket, room, p) {
   if (room.hostId === oldId) room.hostId = p.id;
   socket.join(room.code);
   socket.data.code = room.code;
+  if (p.forfeited) {
+    io.to(p.id).emit('race:notice', { message: 'You disconnected during the race, so you forfeited your entry fee.' });
+  }
   sendAccount(p);
 }
 
@@ -451,8 +479,15 @@ function dropConnection(socket) {
   p.awayTimer = setTimeout(function () {
     removePlayer(room, p);
   }, GRACE_MS);
+  // Ranked: once the fee is in the pot, a disconnect forfeits it. The racer is out of this race (they can come
+  // back to watch), and their fee stays in the pot for the racers who stay.
+  if (room.ranked && p.entered && (room.status === 'countdown' || room.status === 'racing')) {
+    p.entered = false;
+    p.forfeited = true;
+  }
   if (room.hostId === p.id) room.hostId = pickHost(room);
-  broadcast(room);
+  if (room.status === 'racing' && allFinished(room)) endRace(room);
+  else broadcast(room);
 }
 
 // ---------- socket events ----------

@@ -23,6 +23,7 @@ test('Supabase transactions', { skip: enabled ? false : 'set TEST_SUPABASE=1 to 
 
   t.after(async () => {
     for (const c of codes) await db.from('pots').delete().eq('code', c);
+    for (const c of codes) await db.from('race_results').delete().eq('room', c);  // players rows go with them
     for (const p of pids) {
       await db.from('ledger').delete().eq('pid', p);
       await db.from('accounts').delete().eq('pid', p);
@@ -89,6 +90,59 @@ test('Supabase transactions', { skip: enabled ? false : 'set TEST_SUPABASE=1 to 
     assert.strictEqual((await coins(a)) + (await coins(b)) + (await coins(c)), before);
     assert.ok(out[a].ratingAfter > out[a].ratingBefore);
     await assert.rejects(acc.settle(code, [{ pid: a, active: true }]));  // already paid out
+  });
+
+  await t.test('pot is split 60/30/10 and the results are saved in the same call', async () => {
+    const [a, b, c] = [await player('a'), await player('b'), await player('c')];
+    const code = codeOf(8); codes.push(code);
+    await acc.collectEntries(code, [a, b, c], FEE);   // pot = 150
+    const out = await acc.settle(code, [
+      { pid: a, active: true, name: 'Ann', wpm: 70, accuracy: 98.5, finished: true, progress: 100, seconds: 41.2 },
+      { pid: b, active: true, name: 'Bo', wpm: 55, accuracy: 95, finished: false, progress: 80, seconds: null },
+      { pid: c, active: true, name: 'Cy', wpm: 30, accuracy: 90, finished: false, progress: 40, seconds: null },
+    ], 'The passage text.');
+    assert.deepStrictEqual([out[a].payout, out[b].payout, out[c].payout], [90, 45, 15]);
+
+    const rows = await db.from('race_results').select('room, ranked, text, race_result_players(rank, pid, name, wpm, payout, net, rating_before, rating_after)').eq('room', code);
+    assert.strictEqual(rows.data.length, 1);
+    assert.strictEqual(rows.data[0].text, 'The passage text.');
+    const players = rows.data[0].race_result_players.sort((x, y) => x.rank - y.rank);
+    assert.deepStrictEqual(players.map((p) => p.name), ['Ann', 'Bo', 'Cy']);
+    assert.deepStrictEqual(players.map((p) => p.payout), [90, 45, 15]);
+    assert.strictEqual(players[0].rating_after, out[a].ratingAfter);
+
+    const recent = await acc.recentResults(5);
+    assert.ok(recent.some((r) => r.room === code && r.players[0].name === 'Ann'));
+  });
+
+  await t.test('a failed settle saves no results', async () => {
+    const a = await player('a'); const x = await player('x');
+    const code = codeOf(9); codes.push(code);
+    await acc.collectEntries(code, [a], FEE);
+    await assert.rejects(acc.settle(code, [{ pid: a, active: true, name: 'A' }, { pid: x, active: true, name: 'X' }], 'text'));
+    const rows = await db.from('race_results').select('id').eq('room', code);
+    assert.strictEqual(rows.data.length, 0);
+    await acc.voidPot(code);
+  });
+
+  await t.test('nobody typed: no results are saved', async () => {
+    const a = await player('a');
+    const code = codeOf(10); codes.push(code);
+    await acc.collectEntries(code, [a], FEE);
+    await acc.settle(code, [{ pid: a, active: false, name: 'A' }], 'text');
+    const rows = await db.from('race_results').select('id').eq('room', code);
+    assert.strictEqual(rows.data.length, 0);
+  });
+
+  await t.test('coins are virtual only: the ledger has no way to record a purchase or a cash-out', async () => {
+    const a = await player('a');
+    for (const type of ['purchase', 'deposit', 'withdrawal', 'cashout']) {
+      const res = await db.from('ledger').insert({ pid: a, type, amount: 1, balance: 1 });
+      assert.ok(res.error, type + ' must be rejected by the database');
+    }
+    // only these four kinds of entry exist, and none of them is money in or out
+    const ok = await db.from('ledger').select('type').eq('pid', a);
+    assert.ok(ok.data.every((r) => ['grant', 'entry', 'refund', 'reward'].includes(r.type)));
   });
 
   await t.test('settle rolls back if a racer never paid in', async () => {

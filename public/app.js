@@ -344,7 +344,7 @@ function renderLanes(room) {
     if (p.away) cls += ' left';
     if (!p.entered && room.status !== 'lobby') {
       cls += ' watching';
-      name += ' <small>(watching)</small>';
+      name += p.forfeited ? ' <small>(forfeited)</small>' : ' <small>(watching)</small>';
     }
     html += '<div class="' + cls + '">' +
       '<span class="rank">' + (i + 1) + '</span>' +
@@ -363,14 +363,16 @@ function renderPanel(room, me, rank) {
   if (room.status === 'lobby') {
     html = '<h2>Waiting for racers</h2><p>Share the code <strong>' + room.code +
       '</strong> or click it above to copy an invite link. ' + (room.ranked
-        ? 'Ranked: entry is ' + room.fee + ' coins per racer, and your rating changes. Starting alone just returns your own fee.'
+        ? 'Ranked: entry is ' + room.fee + ' coins per racer, and your rating changes. Disconnecting or leaving once the race has started forfeits your entry fee. Starting alone just returns your own fee.'
         : 'Casual: free to play. No coins are spent or won and ratings do not change.') + '</p>';
     if (isHost) html += '<button id="start" class="btn" type="button">Start race</button>';
     else html += '<p>Waiting for the host to start.</p>';
   } else if (room.status === 'countdown') {
     html = '<div class="count" id="count">3</div>';
   } else if (room.status === 'finished') {
-    if (!me.entered) {
+    if (me.forfeited) {
+      html = '<h2>You forfeited this race</h2><p>You disconnected, so your ' + room.fee + '-coin entry fee stayed in the pot.';
+    } else if (!me.entered) {
       html = '<h2>You watched this one</h2><p>You needed ' + room.fee + ' coins to enter.';
     } else if (me.finished) {
       html = '<h2>You finished ' + ordinal(rank) + '</h2><p>' + me.wpm + ' WPM, ' + me.accuracy +
