@@ -9,15 +9,28 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=17">
 </head>
 <body>
-  <main>
-    <div id="userBar" class="user-bar" hidden>
-      <span>Racing as <b id="userEmail"></b></span>
-      <button id="signOut" class="btn ghost" type="button">Log out</button>
+  <a class="skip" href="#main">Skip to content</a>
+  <header id="topnav" class="topnav" hidden>
+    <div class="topnav-inner">
+      <a class="brand" href="#play" data-nav="play" aria-label="Type Sprint home">Type Sprint</a>
+      <nav id="tabs" class="tabs" aria-label="Main">
+        <button type="button" class="navtab" data-nav="play">Play</button>
+        <button type="button" class="navtab" data-nav="stats">Stats</button>
+        <button type="button" class="navtab" data-nav="wallet">Wallet</button>
+        <button type="button" class="navtab" data-nav="board">Leaderboard</button>
+      </nav>
+      <div id="userBar" class="user-bar">
+        <span id="coinPill" class="chip" hidden></span>
+        <span class="who"><b id="userEmail"></b></span>
+        <button id="signOut" class="btn ghost" type="button">Log out</button>
+      </div>
     </div>
+  </header>
 
+  <main id="main">
     <!-- Login -->
     <section id="auth" class="screen" hidden>
       <h1>Type Sprint</h1>
@@ -39,11 +52,11 @@
     </section>
 
     <!-- Home -->
-    <section id="home" class="screen" hidden>
-      <h1>Type Sprint</h1>
-      <span class="sticker">Up to 5 racers<br>live scoring</span>
+    <section id="home" class="screen" data-tab="play" hidden>
+      <h1 class="hero-title" data-pane="play">Type Sprint</h1>
+      <span class="sticker" data-pane="play">Up to 5 racers<br>live scoring</span>
 
-      <div class="join-card">
+      <div class="join-card" data-pane="play">
         <input id="name" type="hidden">
 
         <fieldset class="mode">
@@ -77,7 +90,7 @@
       </div>
 
       <!-- Wallet and transactions -->
-      <section id="wallet" class="wallet" hidden>
+      <section id="wallet" class="wallet" data-pane="wallet" hidden>
         <h2>Your wallet</h2>
         <div id="walletStats" class="record-stats"></div>
         <p class="wallet-note">Ranked races cost <b id="feeNote">50</b> coins to enter. The prize pool is split among the racers who finish highest, and a racer who disconnects forfeits their entry fee. Coins are virtual only: they can't be bought with real money or cashed out.</p>
@@ -95,14 +108,14 @@
         <button id="ledgerMore" class="btn ghost" type="button" hidden>Show more</button>
       </section>
 
-      <ol class="steps">
+      <ol class="steps" data-pane="play">
         <li>Create a room and share the four-letter code.</li>
         <li>Friends join from the link or the code.</li>
         <li>The host starts the race. Everyone types the same passage.</li>
       </ol>
 
       <!-- Live lobby: rooms anyone can join right now -->
-      <section id="lobby" class="lobby">
+      <section id="lobby" class="lobby" data-pane="play">
         <div class="lobby-head">
           <h2>Open rooms</h2>
           <span class="live"><i></i>Live</span>
@@ -112,7 +125,7 @@
       </section>
 
       <!-- Saved races (from this browser) -->
-      <section id="records" class="records" hidden>
+      <section id="records" class="records" data-pane="stats" hidden>
         <div class="records-head">
           <h2>Your saved races</h2>
           <button id="clearRecords" class="btn ghost" type="button">Clear</button>
@@ -122,15 +135,18 @@
       </section>
 
       <!-- Ranked race history (from the REST API) -->
-      <section id="raceHistory" class="records" hidden>
+      <section id="raceHistory" class="records" data-pane="stats" hidden>
         <div class="records-head"><h2>Race history</h2></div>
         <p class="wallet-note">Your ranked races, saved on your account.</p>
         <ol id="raceList" class="record-list"></ol>
         <button id="raceMore" class="btn ghost" type="button" hidden>Show more</button>
       </section>
 
+      <p id="statsEmpty" class="empty-tab" data-pane="stats" hidden>No races yet. Play a race and your stats will show up here.</p>
+      <p id="boardEmpty" class="empty-tab" data-pane="board" hidden>The leaderboard is empty. Finish a ranked race to get on it.</p>
+
       <!-- Stats and leaderboard (kept on the server) -->
-      <section id="myStats" class="statcard" hidden>
+      <section id="myStats" class="statcard" data-pane="stats" hidden>
         <h2>Your stats</h2>
         <div id="statsSummary" class="record-stats"></div>
         <div class="stats-grid">
@@ -146,7 +162,7 @@
         <p id="statsNote" class="wallet-note" hidden></p>
       </section>
 
-      <section id="board" class="statcard" hidden>
+      <section id="board" class="statcard" data-pane="board" hidden>
         <h2>Leaderboard</h2>
         <p class="wallet-note">Ranked players by rating. Races that anti-cheat flagged don't count.</p>
         <div class="table-wrap">
@@ -161,12 +177,13 @@
     <!-- Room -->
     <section id="room" class="screen" hidden>
       <header class="bar">
+        <button id="backHome" class="btn ghost back" type="button" aria-label="Back to lobby">← Lobby</button>
         <button id="copyLink" class="code" type="button" title="Copy invite link">
           <span class="muted">Room</span> <strong id="roomCode">----</strong>
         </button>
         <span id="status" class="status"></span>
         <span id="walletChip" class="chip" hidden></span>
-        <button id="leave" class="btn ghost" type="button">Leave</button>
+        <button id="leave" class="btn ghost" type="button">Leave room</button>
       </header>
 
       <section id="lanes" class="lanes" aria-label="Live leaderboard"></section>
@@ -192,6 +209,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

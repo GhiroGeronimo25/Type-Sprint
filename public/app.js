@@ -109,6 +109,7 @@ function onAuthChange(session) {
     socket.disconnect();
     state.room = null;
     state.account = null;
+    $('coinPill').hidden = true;
     $('typing').disabled = true;
     history.replaceState(null, '', location.pathname);
     showScreen('auth');
@@ -181,19 +182,62 @@ function hideToast() {
   $('toast').classList.remove('show');
 }
 
+const TABS = ['play', 'stats', 'wallet', 'board'];
+let currentTab = 'play';
+
+function tabFromHash() {
+  const t = location.hash.replace('#', '');
+  return TABS.indexOf(t) >= 0 ? t : 'play';
+}
+
+function setTab(tab, pushHash) {
+  if (TABS.indexOf(tab) < 0) tab = 'play';
+  currentTab = tab;
+  $('home').setAttribute('data-tab', tab);
+  const buttons = document.querySelectorAll('#tabs .navtab');
+  for (let i = 0; i < buttons.length; i++) {
+    const on = buttons[i].getAttribute('data-nav') === tab;
+    if (on) buttons[i].setAttribute('aria-current', 'page');
+    else buttons[i].removeAttribute('aria-current');
+  }
+  if (pushHash !== false && !state.room) history.replaceState(null, '', (location.search || '') + '#' + tab);
+  updateEmptyStates();
+  if (!$('home').hidden) window.scrollTo(0, 0);
+}
+
+function updateEmptyStates() {
+  // friendly messages when a tab would otherwise be blank
+  $('statsEmpty').hidden = currentTab !== 'stats' || !$('records').hidden || !$('raceHistory').hidden || !$('myStats').hidden;
+  $('boardEmpty').hidden = currentTab !== 'board' || !$('board').hidden;
+}
+
 function showScreen(name) {
   $('auth').hidden = name !== 'auth';
-  $('userBar').hidden = name !== 'home';
+  $('topnav').hidden = name !== 'home';
   $('home').hidden = name !== 'home';
   $('room').hidden = name !== 'room';
+  document.body.classList.toggle('has-nav', name === 'home');
+  if (name === 'home') setTab(tabFromHash(), false);
+  window.scrollTo(0, 0);
 }
+
+document.addEventListener('click', function (event) {
+  const nav = event.target.closest('[data-nav]');
+  if (!nav) return;
+  event.preventDefault();
+  if (state.room) return; // never switch tabs while racing
+  setTab(nav.getAttribute('data-nav'));
+});
+window.addEventListener('hashchange', function () {
+  if (!$('home').hidden) setTab(tabFromHash(), false);
+});
 
 function goHome() {
   watchLobby();
   state.room = null;
   state.text = '';
   $('typing').disabled = true;
-  history.replaceState(null, '', location.pathname);
+  history.replaceState(null, '', location.pathname + '#play');
   showScreen('home');
   renderRecords();
   loadStats();
@@ -314,6 +358,7 @@ $('cancelSearch').addEventListener('click', cancelSearch);
 $('name').addEventListener('keydown', onHomeKey);
 $('code').addEventListener('keydown', onHomeKey);
 $('leave').addEventListener('click', leaveRoom);
+$('backHome').addEventListener('click', leaveRoom);
 $('copyLink').addEventListener('click', copyLink);
 
 // ---------- saved races (kept in this browser) ----------
@@ -349,6 +394,7 @@ function saveRecord(room, me, rank) {
 function renderRecords() {
   const list = loadRecords();
   $('records').hidden = list.length === 0;
+  updateEmptyStates();
   if (!list.length) return;
   let best = 0;
   let wins = 0;
@@ -384,6 +430,7 @@ const races_ = { items: [], hasMore: false, loading: false };
 
 function renderRaceHistory() {
   $('raceHistory').hidden = races_.items.length === 0;
+  updateEmptyStates();
   let html = '';
   for (let i = 0; i < races_.items.length; i++) {
     const r = races_.items[i];
@@ -462,6 +509,7 @@ function trendSvg(trend) {
 function renderStats(stats, board) {
   const hasStats = stats && (stats.races > 0 || stats.flaggedRaces > 0);
   $('myStats').hidden = !hasStats;
+  updateEmptyStates();
   if (hasStats) {
     $('statsSummary').innerHTML = '<div><b>' + stats.bestWpm + '</b><span>best WPM</span></div>' +
       '<div><b>' + stats.avgWpm + '</b><span>average WPM</span></div>' +
@@ -481,6 +529,7 @@ function renderStats(stats, board) {
 
   const rows = board || [];
   $('board').hidden = rows.length === 0;
+  updateEmptyStates();
   let html = '';
   rows.forEach(function (r, i) {
     html += '<tr' + (r.isYou ? ' class="you"' : '') + '><td>' + (i + 1) + '</td><td>' + esc(r.name) + (r.isYou ? ' (you)' : '') +
@@ -574,6 +623,8 @@ function renderWallet() {
     loadHistory(true);
   }
   $('walletChip').textContent = a.coins + ' coins \u00b7 rating ' + a.rating;
+  $('coinPill').hidden = false;
+  $('coinPill').textContent = a.coins + ' coins \u00b7 ' + a.rating;
   refreshChip();
 }
 
