@@ -27,3 +27,9 @@ test('the player id in a message is ignored: the verified login decides who you 
   assert.ok(called('playerStats').some((c) => c[1] === 'real-me'));
   assert.ok(!called('playerStats').some((c) => c[1] === 'victim-account'));
 });
+
+test('the display name comes from the account, not from the message', async () => {
+  const a = connect({ loginAs: 'name-user' });
+  const res = await a.ask('room:create', { name: 'Fake Name', ranked: false });
+  assert.ok(res.ok);
+});

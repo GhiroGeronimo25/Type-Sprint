@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
   <main>
@@ -18,23 +18,27 @@
       <h1>Type Sprint</h1>
       <p class="lede">Log in to race, earn coins and climb the leaderboard.</p>
       <form id="authForm" class="join-card" novalidate>
+        <div class="auth-tabs" role="tablist">
+          <button id="tabLogin" class="tab active" type="button" role="tab">Log in</button>
+          <button id="tabSignup" class="tab" type="button" role="tab">Sign up</button>
+        </div>
+        <div id="usernameRow" hidden>
+          <label for="authUsername">Username</label>
+          <input id="authUsername" type="text" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="3-16 letters, numbers, . - _">
+        </div>
         <label for="authEmail">Email</label>
         <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
         <label for="authPassword">Password</label>
         <input id="authPassword" type="password" autocomplete="current-password" minlength="6" placeholder="At least 6 characters" required>
         <p id="authMsg" class="auth-msg" role="alert" hidden></p>
-        <div class="actions">
-          <button id="signIn" class="btn" type="submit">Log in</button>
-          <span class="or">or</span>
-          <button id="signUp" class="btn secondary" type="button">Create account</button>
-        </div>
+        <div class="actions"><button id="authSubmit" class="btn" type="submit">Log in</button></div>
       </form>
     </section>
 
     <!-- Home -->
     <section id="home" class="screen" hidden>
       <div id="userBar" class="user-bar">
-        <span class="muted">Logged in as <b id="userEmail"></b></span>
+        <span class="muted">Racing as <b id="userEmail"></b></span>
         <button id="signOut" class="btn ghost" type="button">Log out</button>
       </div>
       <h1>Type Sprint</h1>
@@ -42,8 +46,7 @@
       <p class="lede">Race up to five people on the same passage. The server counts every keystroke, so the scoreboard is the truth.</p>
 
       <div class="join-card">
-        <label for="name">Your name</label>
-        <input id="name" type="text" maxlength="16" autocomplete="nickname" placeholder="Racer">
+        <input id="name" type="hidden">
 
         <fieldset class="mode">
           <legend>Race type (for a room you create)</legend>
@@ -162,6 +165,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

@@ -30,8 +30,7 @@ function showAuthMessage(text, isError) {
 }
 
 function setAuthBusy(busy) {
-  $('signIn').disabled = busy;
-  $('signUp').disabled = busy;
+  $('authSubmit').disabled = busy;
 }
 
 function friendlyAuthError(error) {
@@ -42,27 +41,48 @@ function friendlyAuthError(error) {
   return m || 'Something went wrong. Please try again.';
 }
 
-async function onSignIn(event) {
-  if (event) event.preventDefault();
+let authMode = 'login';
+const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
+
+function setAuthMode(mode) {
+  authMode = mode;
   showAuthMessage('');
-  setAuthBusy(true);
-  const res = await supa.auth.signInWithPassword({ email: $('authEmail').value.trim(), password: $('authPassword').value });
-  setAuthBusy(false);
-  if (res.error) showAuthMessage(friendlyAuthError(res.error), true);
-  // success is handled by onAuthChange
+  $('tabLogin').classList.toggle('active', mode === 'login');
+  $('tabSignup').classList.toggle('active', mode === 'signup');
+  $('usernameRow').hidden = mode !== 'signup';
+  $('authSubmit').textContent = mode === 'signup' ? 'Create account' : 'Log in';
+  $('authPassword').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
 }
 
-async function onSignUp() {
+async function onAuthSubmit(event) {
+  event.preventDefault();
   showAuthMessage('');
   const email = $('authEmail').value.trim();
   const password = $('authPassword').value;
   if (!email || password.length < 6) return showAuthMessage('Enter an email and a password of at least 6 characters.', true);
   setAuthBusy(true);
-  const res = await supa.auth.signUp({ email: email, password: password });
-  setAuthBusy(false);
-  if (res.error) return showAuthMessage(friendlyAuthError(res.error), true);
-  // with email confirmation switched on there is no session yet
-  if (!res.data.session) showAuthMessage('Account created. Check your email to confirm it, then log in.', false);
+  try {
+    if (authMode === 'login') {
+      const res = await supa.auth.signInWithPassword({ email: email, password: password });
+      if (res.error) showAuthMessage(friendlyAuthError(res.error), true);
+      return; // success is handled by onAuthChange
+    }
+    const username = $('authUsername').value.trim();
+    if (!USERNAME_RE.test(username)) return showAuthMessage('Username: 3-16 letters, numbers, dots, dashes or underscores.', true);
+    const check = await (await fetch('/api/username-available?name=' + encodeURIComponent(username))).json();
+    if (!check.ok) return showAuthMessage(check.error || 'That username is not available.', true);
+    const res = await supa.auth.signUp({ email: email, password: password, options: { data: { username: username } } });
+    if (res.error) return showAuthMessage(friendlyAuthError(res.error), true);
+    // with email confirmation switched on there is no session yet
+    if (!res.data.session) {
+      setAuthMode('login');
+      showAuthMessage('Account created. Check your email to confirm it, then log in.', false);
+    }
+  } catch (e) {
+    showAuthMessage('Could not reach the server. Please try again.', true);
+  } finally {
+    setAuthBusy(false);
+  }
 }
 
 async function onSignOut() {
@@ -74,7 +94,9 @@ function onAuthChange(session) {
   if (session && session.user) {
     const changedUser = pid !== session.user.id;
     pid = session.user.id;
-    $('userEmail').textContent = session.user.email || '';
+    const username = (session.user.user_metadata || {}).username || String(session.user.email || '').split('@')[0];
+    $('userEmail').textContent = username;
+    $('name').value = username; // the server uses the account's name; this only keeps the screen consistent
     $('authPassword').value = '';
     if (changedUser) socket.disconnect(); // a different person logged in: start a fresh connection
     socket.connect();                     // does nothing if already connected
@@ -103,8 +125,9 @@ async function startAuth() {
     return showAuthMessage('Login is not set up yet: the server needs SUPABASE_URL and SUPABASE_ANON_KEY.', true);
   }
   supa = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
-  $('authForm').addEventListener('submit', onSignIn);
-  $('signUp').addEventListener('click', onSignUp);
+  $('authForm').addEventListener('submit', onAuthSubmit);
+  $('tabLogin').addEventListener('click', function () { setAuthMode('login'); });
+  $('tabSignup').addEventListener('click', function () { setAuthMode('signup'); });
   $('signOut').addEventListener('click', onSignOut);
   supa.auth.onAuthStateChange(function (event, session) {
     if (event === 'TOKEN_REFRESHED') return; // same user: nothing to redo
@@ -174,14 +197,12 @@ function goHome() {
 }
 
 // ---------- home screen ----------
-$('name').value = localStorage.getItem('name') || '';
 const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) $('code').value = urlRoom.toUpperCase().slice(0, 4);
 
 function onEntered(result) {
   if (!result.ok) return showToast(result.error);
   showSearching(false);
-  localStorage.setItem('name', $('name').value);
   localStorage.setItem('session', result.code);
   history.replaceState(null, '', '?room=' + result.code);
   showScreen('room');

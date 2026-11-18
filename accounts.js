@@ -40,7 +40,16 @@ function createAccounts(url, serviceKey) {
     if (!token || typeof token !== 'string') return null;
     const res = await db.auth.getUser(token);
     if (res.error || !res.data || !res.data.user) return null;
-    return { id: res.data.user.id, email: res.data.user.email || '' };
+    const meta = res.data.user.user_metadata || {};
+    return { id: res.data.user.id, email: res.data.user.email || '', username: typeof meta.username === 'string' ? meta.username : '' };
+  }
+
+  // true if nobody has this username yet (case-insensitive). Used by the sign-up form.
+  async function usernameAvailable(name) {
+    const pattern = String(name).replace(/[\\%_]/g, function (c) { return '\\' + c; }); // ilike treats % and _ as wildcards
+    const res = await db.from('accounts').select('pid').ilike('name', pattern).limit(1);
+    if (res.error) throw new Error('username check failed: ' + res.error.message);
+    return res.data.length === 0;
   }
 
   function withFee(view) {
@@ -123,7 +132,7 @@ function createAccounts(url, serviceKey) {
   }
 
   return {
-    verifyToken: verifyToken, join: join, view: view,
+    verifyToken: verifyToken, usernameAvailable: usernameAvailable, join: join, view: view,
     recordRaceStats: recordRaceStats, playerStats: playerStats, leaderboard: leaderboard,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
     settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,

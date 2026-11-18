@@ -17,7 +17,8 @@ function fakeAccounts() {
   return {
     ENTRY_FEE: 50,
     // test tokens look like "token:<userId>"; anything else is a forged or missing login
-    verifyToken: async (token) => (/^token:[A-Za-z0-9-]+$/.test(String(token)) ? { id: String(token).slice(6), email: '' } : null),
+    verifyToken: async (token) => (/^token:[A-Za-z0-9-]+$/.test(String(token)) ? { id: String(token).slice(6), email: '', username: 'tester' } : null),
+    usernameAvailable: async (name) => name !== 'taken',
     join: async (pid) => { calls.push(['join', pid]); if (!(pid in wallets)) wallets[pid] = 500; return { rating: 1000, coins: wallets[pid], races: 0, wins: 0, ledger: [], entryFee: 50 }; },
     view: async (pid) => ({ rating: 1000, coins: wallets[pid] || 0, races: 0, wins: 0, ledger: [], entryFee: 50 }),
     collectEntries: async (code, pids, fee) => {
@@ -77,7 +78,7 @@ function connect(opts) {
     emit(ev, data) { emits.push({ target: id, ev, data }); },
   };
   onConnection(socket);
-  const login = (data) => { socket.data.pid = pinned || String((data && data.pid) || socket.id).replace(/[^A-Za-z0-9-]/g, '').slice(0, 40); };
+  const login = (data) => { socket.data.name = (data && data.name) || 'Racer'; socket.data.pid = pinned || String((data && data.pid) || socket.id).replace(/[^A-Za-z0-9-]/g, '').slice(0, 40); };
   const ask = (ev, data) => new Promise((resolve) => { login(data); handlers[ev](data, resolve); });
   return { socket, ask, fire: (ev, data) => { login(data); handlers[ev](data); } };
 }

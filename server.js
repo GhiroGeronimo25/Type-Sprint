@@ -24,6 +24,18 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // The browser needs the project URL and the ANON key to show the login form. Both are public by design.
 // (Never expose SUPABASE_SERVICE_KEY here.)
+const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
+app.get('/api/username-available', function (req, res) {
+  const name = String((req.query || {}).name || '');
+  if (!USERNAME_RE.test(name)) return res.json({ ok: false, error: 'Use 3-16 letters, numbers, dots, dashes or underscores.' });
+  accounts.usernameAvailable(name).then(function (free) {
+    res.json({ ok: free, error: free ? '' : 'That username is taken.' });
+  }).catch(function (e) {
+    console.error('Username check failed:', e.message);
+    res.status(500).json({ ok: false, error: 'Could not check the username. Please try again.' });
+  });
+});
+
 app.get('/config.json', function (req, res) {
   res.json({ supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '' });
 });
@@ -43,6 +55,8 @@ io.use(async function (socket, next) {
     if (!user) return next(new Error('unauthorized'));
     socket.data.pid = user.id;
     socket.data.email = user.email;
+    // the display name comes from the account (chosen at sign-up), never from what the browser sends
+    socket.data.name = user.username || String(user.email || '').split('@')[0];
     next();
   } catch (e) {
     console.error('Login check failed:', e.message);
@@ -613,7 +627,7 @@ function onConnection(socket) {
     const difficulty = passages.isDifficulty((data || {}).difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY; // anything else becomes the default
     const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, status: 'lobby', text: '', startAt: 0, players: [] };
     rooms[room.code] = room;
-    const player = joinRoom(socket, room, (data || {}).name, socket.data.pid);
+    const player = joinRoom(socket, room, socket.data.name, socket.data.pid);
     try {
       await registerPlayer(room, player);
     } catch (e) {
@@ -643,7 +657,7 @@ function onConnection(socket) {
     else if (room.players.length >= MAX_PLAYERS) error = 'That room is full (' + MAX_PLAYERS + ' players max).';
 
     if (error) return ack({ ok: false, error: error });
-    const player = joinRoom(socket, room, data.name, pid);
+    const player = joinRoom(socket, room, socket.data.name, pid);
     try {
       await registerPlayer(room, player);
     } catch (e) {
@@ -743,7 +757,7 @@ function onConnection(socket) {
     if (socket.data.searching || matchmaker.has(pid)) return ack({ ok: false, error: 'You are already searching for a match.' });
     const ranked = data.ranked !== false; // ranked unless the player picked casual
     const difficulty = passages.isDifficulty(data.difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY;
-    const name = cleanName(data.name);
+    const name = cleanName(socket.data.name);
 
     let account;
     try {
