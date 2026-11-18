@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -59,33 +59,52 @@
       <div class="join-card" data-pane="play">
         <input id="name" type="hidden">
 
-        <fieldset class="mode">
-          <legend>Race type (for a room you create)</legend>
-          <label><input type="radio" name="mode" value="ranked" checked> <b>Ranked</b> <small>entry fee, prizes, rating changes</small></label>
-          <label><input type="radio" name="mode" value="casual"> <b>Casual</b> <small>free, no coins or rating</small></label>
-        </fieldset>
+        <div class="setup-step">
+          <h2 class="step-title">Choose your race</h2>
 
-        <fieldset class="mode">
-          <legend>Passage difficulty (for a room you create)</legend>
-          <label><input type="radio" name="difficulty" value="easy"> <b>Easy</b> <small>short, everyday words</small></label>
-          <label><input type="radio" name="difficulty" value="medium" checked> <b>Medium</b> <small>a full paragraph</small></label>
-          <label><input type="radio" name="difficulty" value="hard"> <b>Hard</b> <small>long words, numbers and punctuation</small></label>
-        </fieldset>
+          <fieldset class="seg-group">
+            <legend>Race type</legend>
+            <div class="seg cols-2">
+              <label><input type="radio" name="mode" value="ranked" checked><span><b>Ranked</b><small>Entry fee, prizes, rating changes</small></span></label>
+              <label><input type="radio" name="mode" value="casual"><span><b>Casual</b><small>Free, no coins or rating</small></span></label>
+            </div>
+          </fieldset>
 
-        <div class="actions">
-          <button id="create" class="btn" type="button">Create room</button>
-          <span class="or">or</span>
-          <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Code" aria-label="Room code">
-          <button id="join" class="btn secondary" type="button">Join room</button>
+          <fieldset class="seg-group">
+            <legend>Passage difficulty</legend>
+            <div class="seg cols-3">
+              <label><input type="radio" name="difficulty" value="easy"><span><b>Easy</b><small>Short, everyday words</small></span></label>
+              <label><input type="radio" name="difficulty" value="medium" checked><span><b>Medium</b><small>A full paragraph</small></span></label>
+              <label><input type="radio" name="difficulty" value="hard"><span><b>Hard</b><small>Long words, numbers, punctuation</small></span></label>
+            </div>
+          </fieldset>
         </div>
 
-        <div class="quick">
-          <button id="quick" class="btn" type="button">Quick match</button>
-          <span class="muted">Finds opponents with a similar rating, using the race type and difficulty above.</span>
-        </div>
-        <div id="searching" class="searching" role="status" aria-live="polite" hidden>
-          <span id="searchText">Searching for opponents...</span>
-          <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
+        <div class="setup-step">
+          <h2 class="step-title">Pick how to start</h2>
+
+          <div class="start-option">
+            <button id="quick" class="btn big" type="button">Quick match</button>
+            <p class="muted">Instantly find opponents with a similar rating.</p>
+          </div>
+          <div id="searching" class="searching" role="status" aria-live="polite" hidden>
+            <span id="searchText">Searching for opponents...</span>
+            <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
+          </div>
+
+          <div class="start-split">
+            <div class="start-option">
+              <button id="create" class="btn secondary big" type="button">Create room</button>
+              <p class="muted">Host a room and share the code with friends.</p>
+            </div>
+            <div class="start-option join-row">
+              <div class="join-inputs">
+                <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="Room code">
+                <button id="join" class="btn secondary" type="button">Join room</button>
+              </div>
+              <p class="muted">Have a four-letter code? Enter it here.</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -209,6 +228,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=9"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

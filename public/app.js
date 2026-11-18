@@ -334,8 +334,8 @@ function joinRoom() {
 
 function onHomeKey(event) {
   if (event.key !== 'Enter') return;
-  if ($('code').value) joinRoom();
-  else createRoom();
+  if ($('code').value.length >= 4) joinRoom();
+  else if (!$('code').value) createRoom();
 }
 
 function leaveRoom() {
@@ -350,6 +350,14 @@ function copyLink() {
     showToast('Invite link copied');
   });
 }
+
+// Join stays disabled until a full four-letter code is typed
+function syncJoin() {
+  $('code').value = $('code').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  $('join').disabled = $('code').value.length < 4;
+}
+$('code').addEventListener('input', syncJoin);
+syncJoin();
 
 $('create').addEventListener('click', createRoom);
 $('join').addEventListener('click', joinRoom);
