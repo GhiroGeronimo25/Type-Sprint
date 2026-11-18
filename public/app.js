@@ -47,11 +47,13 @@ const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
 function setAuthMode(mode) {
   authMode = mode;
   showAuthMessage('');
-  $('tabLogin').classList.toggle('active', mode === 'login');
-  $('tabSignup').classList.toggle('active', mode === 'signup');
-  $('usernameRow').hidden = mode !== 'signup';
-  $('authSubmit').textContent = mode === 'signup' ? 'Create account' : 'Log in';
-  $('authPassword').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+  const signup = mode === 'signup';
+  $('authTitle').textContent = signup ? 'Create account' : 'Log in';
+  $('usernameRow').hidden = !signup;
+  $('authSubmit').textContent = signup ? 'Create account' : 'Log in';
+  $('authSwitchText').textContent = signup ? 'Already have an account?' : 'New here?';
+  $('authSwitch').textContent = signup ? 'Log in' : 'Create an account';
+  $('authPassword').autocomplete = signup ? 'new-password' : 'current-password';
 }
 
 async function onAuthSubmit(event) {
@@ -126,8 +128,7 @@ async function startAuth() {
   }
   supa = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
   $('authForm').addEventListener('submit', onAuthSubmit);
-  $('tabLogin').addEventListener('click', function () { setAuthMode('login'); });
-  $('tabSignup').addEventListener('click', function () { setAuthMode('signup'); });
+  $('authSwitch').addEventListener('click', function () { setAuthMode(authMode === 'login' ? 'signup' : 'login'); });
   $('signOut').addEventListener('click', onSignOut);
   supa.auth.onAuthStateChange(function (event, session) {
     if (event === 'TOKEN_REFRESHED') return; // same user: nothing to redo
