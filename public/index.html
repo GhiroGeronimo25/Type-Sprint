@@ -9,15 +9,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=12">
+  <link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
   <main>
+    <div id="userBar" class="user-bar" hidden>
+      <span>Racing as <b id="userEmail"></b></span>
+      <button id="signOut" class="btn ghost" type="button">Log out</button>
+    </div>
+
     <!-- Login -->
     <section id="auth" class="screen" hidden>
       <h1>Type Sprint</h1>
       <p class="lede">Log in to race, earn coins and climb the leaderboard.</p>
       <form id="authForm" class="join-card" novalidate>
+        <h2 id="authTitle" class="auth-title">Log in</h2>
         <div id="usernameRow" hidden>
           <label for="authUsername">Username</label>
           <input id="authUsername" type="text" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="3-16 letters, numbers, . - _">
@@ -34,10 +40,6 @@
 
     <!-- Home -->
     <section id="home" class="screen" hidden>
-      <div id="userBar" class="user-bar">
-        <span class="muted">Racing as <b id="userEmail"></b></span>
-        <button id="signOut" class="btn ghost" type="button">Log out</button>
-      </div>
       <h1>Type Sprint</h1>
       <span class="sticker">Up to 5 racers<br>live scoring</span>
       <p class="lede">Race up to five people on the same passage. The server counts every keystroke, so the scoreboard is the truth.</p>
@@ -162,6 +164,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
