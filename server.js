@@ -131,8 +131,9 @@ function requireLogin(req, res, next) {
   accounts.verifyToken(match[1]).then(function (user) {
     if (!user) return res.status(401).json({ error: 'Your login is invalid or expired.' });
     const now = Date.now();
-    if (apiLastCall[user.id] && now - apiLastCall[user.id] < 200) return res.status(429).json({ error: 'Too many requests.' });
-    apiLastCall[user.id] = now;
+    const key = user.id + ' ' + (req.path || ''); // the limit is per user and per endpoint
+    if (apiLastCall[key] && now - apiLastCall[key] < 200) return res.status(429).json({ error: 'Too many requests.' });
+    apiLastCall[key] = now;
     req.user = user;
     next();
   }).catch(function (e) {
@@ -169,6 +170,34 @@ app.get('/api/wallet/transactions', requireLogin, function (req, res) {
   }).catch(function (e) {
     console.error('Could not load transactions:', e.message);
     res.status(500).json({ error: 'Could not load your transactions.' });
+  });
+});
+
+// ---------- REST API: race history ----------
+// GET /api/races?offset=0&limit=20 -> your ranked races, newest first
+//   -> { items: [{ id, room, ranked, endedAt, rank, wpm, accuracy, finished, progress, seconds, payout, net, ratingBefore, ratingAfter }], hasMore, offset, limit }
+app.get('/api/races', requireLogin, function (req, res) {
+  const q = req.query || {};
+  const offset = Math.min(Math.max(parseInt(q.offset, 10) || 0, 0), 10000);
+  const limit = Math.min(Math.max(parseInt(q.limit, 10) || 20, 1), 50);
+  accounts.raceHistory(req.user.id, offset, limit).then(function (page) {
+    res.json({ items: page.items, hasMore: page.hasMore, offset: offset, limit: limit });
+  }).catch(function (e) {
+    console.error('Could not load race history:', e.message);
+    res.status(500).json({ error: 'Could not load your race history.' });
+  });
+});
+
+// GET /api/races/:id -> one race with every racer's standing. Only for races you took part in.
+app.get('/api/races/:id', requireLogin, function (req, res) {
+  const id = String((req.params || {}).id || '');
+  if (!/^[0-9]{1,15}$/.test(id)) return res.status(400).json({ error: 'Bad race id.' });
+  accounts.raceDetail(req.user.id, Number(id)).then(function (race) {
+    if (!race) return res.status(404).json({ error: 'No such race in your history.' });
+    res.json(race);
+  }).catch(function (e) {
+    console.error('Could not load race:', e.message);
+    res.status(500).json({ error: 'Could not load that race.' });
   });
 });
 

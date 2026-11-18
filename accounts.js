@@ -131,6 +131,45 @@ function createAccounts(url, serviceKey) {
     return { items: res.data.slice(0, limit), hasMore: res.data.length > limit };
   }
 
+  // One page of a player's ranked race history, newest first (their own row of each race).
+  // Resolves to { items: [{ id, room, ranked, endedAt, rank, wpm, accuracy, finished, progress, seconds, payout, net, ratingBefore, ratingAfter }], hasMore }
+  async function raceHistory(pid, offset, limit) {
+    const res = await db.from('race_result_players')
+      .select('result_id, rank, wpm, accuracy, finished, progress, seconds, payout, net, rating_before, rating_after, race_results!inner(room, ranked, ended_at)')
+      .eq('pid', pid)
+      .order('result_id', { ascending: false })
+      .range(offset, offset + limit); // one extra row tells us whether there is more
+    if (res.error) throw new Error('race history query failed: ' + res.error.message);
+    const items = res.data.slice(0, limit).map(function (r) {
+      return {
+        id: r.result_id, room: r.race_results.room, ranked: r.race_results.ranked, endedAt: r.race_results.ended_at,
+        rank: r.rank, wpm: r.wpm, accuracy: Number(r.accuracy), finished: r.finished, progress: Number(r.progress),
+        seconds: r.seconds === null ? null : Number(r.seconds), payout: r.payout, net: r.net,
+        ratingBefore: r.rating_before, ratingAfter: r.rating_after,
+      };
+    });
+    return { items: items, hasMore: res.data.length > limit };
+  }
+
+  // One race with everybody's standings. null unless this player took part in it. Never contains a pid.
+  async function raceDetail(pid, id) {
+    const mine = await db.from('race_result_players').select('result_id').eq('pid', pid).eq('result_id', id).limit(1);
+    if (mine.error) throw new Error('race detail query failed: ' + mine.error.message);
+    if (!mine.data.length) return null;
+    const res = await db.from('race_results')
+      .select('id, room, ranked, text, ended_at, race_result_players(rank, name, wpm, accuracy, finished, progress, seconds, payout, net, rating_before, rating_after)')
+      .eq('id', id).single();
+    if (res.error) throw new Error('race detail query failed: ' + res.error.message);
+    const players = res.data.race_result_players.slice().sort(function (a, b) { return a.rank - b.rank; }).map(function (p) {
+      return {
+        rank: p.rank, name: p.name, wpm: p.wpm, accuracy: Number(p.accuracy), finished: p.finished, progress: Number(p.progress),
+        seconds: p.seconds === null ? null : Number(p.seconds), payout: p.payout, net: p.net,
+        ratingBefore: p.rating_before, ratingAfter: p.rating_after,
+      };
+    });
+    return { id: res.data.id, room: res.data.room, ranked: res.data.ranked, endedAt: res.data.ended_at, text: res.data.text, players: players };
+  }
+
   // best and average WPM, accuracy trend (last 20 races, oldest first) and the 5 most-missed characters
   async function playerStats(pid) {
     return call('player_stats', { p_pid: pid });
@@ -142,7 +181,7 @@ function createAccounts(url, serviceKey) {
   }
 
   return {
-    verifyToken: verifyToken, ledgerPage: ledgerPage, usernameAvailable: usernameAvailable, join: join, view: view,
+    verifyToken: verifyToken, ledgerPage: ledgerPage, raceHistory: raceHistory, raceDetail: raceDetail, usernameAvailable: usernameAvailable, join: join, view: view,
     recordRaceStats: recordRaceStats, playerStats: playerStats, leaderboard: leaderboard,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
     settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,

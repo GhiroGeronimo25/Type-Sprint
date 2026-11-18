@@ -578,3 +578,13 @@ input[type="email"]:focus, input[type="password"]:focus { outline: none; backgro
 .chipbtn { font: inherit; font-weight: 700; font-size: 0.85rem; padding: 0.3rem 0.8rem; border: 2px solid var(--ink); border-radius: 999px; background: var(--white); color: var(--ink); cursor: pointer; }
 .chipbtn.active { background: var(--ink); color: var(--signal); }
 #ledgerMore { margin-top: 0.8rem; }
+
+/* ---------- race history ---------- */
+.place { min-width: 2.6rem; font-weight: 800; color: var(--cobalt-deep); }
+.place.first { color: #0a8f62; }
+.record-list .in { color: #0a8f62; }
+.record-list .out { color: var(--bad); }
+#raceMore { margin-top: 0.8rem; }
+@media (min-width: 1000px) {
+  #home #raceHistory { grid-column: 1 / -1; grid-row: 6; margin-top: 2rem; }
+}

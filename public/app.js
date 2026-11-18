@@ -379,7 +379,49 @@ $('clearRecords').addEventListener('click', clearRecords);
 renderRecords();
 
 // ---------- stats and leaderboard (kept on the server) ----------
+// ---------- race history (REST API: GET /api/races) ----------
+const races_ = { items: [], hasMore: false, loading: false };
+
+function renderRaceHistory() {
+  $('raceHistory').hidden = races_.items.length === 0;
+  let html = '';
+  for (let i = 0; i < races_.items.length; i++) {
+    const r = races_.items[i];
+    const when = new Date(r.endedAt).toLocaleString(undefined, ledgerTime);
+    const coins = r.net === 0 ? '0' : signed(r.net);
+    html += '<li><span class="place' + (r.rank === 1 ? ' first' : '') + '">' + ordinal(r.rank) + '</span>' +
+      '<span><b>' + r.wpm + '</b> wpm</span>' +
+      '<span>' + r.accuracy + '% acc</span>' +
+      '<span>' + (r.seconds === null ? 'DNF' : r.seconds + 's') + '</span>' +
+      '<span class="' + (r.net < 0 ? 'out' : 'in') + '">' + coins + ' coins</span>' +
+      '<span>rating ' + r.ratingBefore + ' \u2192 ' + r.ratingAfter + '</span>' +
+      '<span class="muted">' + esc(r.room) + ' \u00b7 ' + when + '</span></li>';
+  }
+  $('raceList').innerHTML = html;
+  $('raceMore').hidden = !races_.hasMore;
+  $('raceMore').disabled = races_.loading;
+}
+
+async function loadRaceHistory(reset) {
+  if (races_.loading || !supa) return;
+  races_.loading = true;
+  try {
+    const token = await getAccessToken();
+    const res = await fetch('/api/races?offset=' + (reset ? 0 : races_.items.length), { headers: { Authorization: 'Bearer ' + token } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const page = await res.json();
+    races_.items = reset ? page.items : races_.items.concat(page.items);
+    races_.hasMore = page.hasMore;
+  } catch (e) {
+    // a failed refresh just keeps what is already on screen
+  }
+  races_.loading = false;
+  renderRaceHistory();
+}
+$('raceMore').addEventListener('click', function () { loadRaceHistory(false); });
+
 function loadStats() {
+  loadRaceHistory(true);
   socket.emit('stats:get', { pid: pid }, function (res) {
     if (res && res.ok) renderStats(res.stats, res.leaderboard);
   });
@@ -534,6 +576,7 @@ function refreshChip() {
 
 function onResult(result) {
   state.result = result;
+  loadRaceHistory(true); // the race has just been saved: refresh the history
   if (state.room) render();
 }
 

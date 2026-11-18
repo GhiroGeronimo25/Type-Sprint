@@ -20,6 +20,8 @@ function fakeAccounts() {
     // test tokens look like "token:<userId>"; anything else is a forged or missing login
     verifyToken: async (token) => (/^token:[A-Za-z0-9-]+$/.test(String(token)) ? { id: String(token).slice(6), email: '', username: 'tester' } : null),
     ledgerPage: async (pid, offset, limit, type) => { calls.push(['ledgerPage', pid, offset, limit, type]); return { items: [{ id: 1, at: new Date().toISOString(), type: type || 'grant', amount: 500, balance: 500, room: '' }], hasMore: offset === 0 }; },
+    raceHistory: async (pid, offset, limit) => { calls.push(['raceHistory', pid, offset, limit]); return { items: [{ id: 7, room: 'ABCD', ranked: true, endedAt: new Date().toISOString(), rank: 1, wpm: 80, accuracy: 97, finished: true, progress: 1, seconds: 41.2, payout: 100, net: 50, ratingBefore: 1000, ratingAfter: 1012 }], hasMore: true }; },
+    raceDetail: async (pid, id) => { calls.push(['raceDetail', pid, id]); return id === 7 ? { id: 7, room: 'ABCD', ranked: true, endedAt: new Date().toISOString(), text: 'x', players: [{ rank: 1, name: 'Ann', wpm: 80 }] } : null; },
     usernameAvailable: async (name) => name !== 'taken',
     join: async (pid) => { calls.push(['join', pid]); if (!(pid in wallets)) wallets[pid] = 500; return { rating: 1000, coins: wallets[pid], races: 0, wins: 0, ledger: [], entryFee: 50 }; },
     view: async (pid) => ({ rating: 1000, coins: wallets[pid] || 0, races: 0, wins: 0, ledger: [], entryFee: 50 }),
@@ -92,7 +94,7 @@ const called = (name) => calls.filter((c) => c[0] === name);
 function apiGet(path, opts) {
   opts = opts || {};
   return new Promise((resolve) => {
-    const req = { headers: opts.token ? { authorization: 'Bearer ' + opts.token } : {}, query: opts.query || {} };
+    const req = { path, params: opts.params || {}, headers: opts.token ? { authorization: 'Bearer ' + opts.token } : {}, query: opts.query || {} };
     const res = { code: 200, status(c) { this.code = c; return this; }, json(body) { resolve({ status: this.code, body }); } };
     const chain = routes[path].slice();
     const next = () => { const fn = chain.shift(); if (fn) fn(req, res, next); };
