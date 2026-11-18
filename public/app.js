@@ -420,11 +420,20 @@ async function loadRaceHistory(reset) {
 }
 $('raceMore').addEventListener('click', function () { loadRaceHistory(false); });
 
-function loadStats() {
+// Uses the REST API: GET /api/stats and GET /api/leaderboard with the login token.
+async function loadStats() {
   loadRaceHistory(true);
-  socket.emit('stats:get', { pid: pid }, function (res) {
-    if (res && res.ok) renderStats(res.stats, res.leaderboard);
-  });
+  if (!supa) return;
+  try {
+    const headers = { Authorization: 'Bearer ' + await getAccessToken() };
+    const both = await Promise.all([fetch('/api/stats', { headers: headers }), fetch('/api/leaderboard?limit=20', { headers: headers })]);
+    if (!both[0].ok || !both[1].ok) throw new Error('HTTP ' + both[0].status + '/' + both[1].status);
+    const stats = await both[0].json();
+    const board = await both[1].json();
+    renderStats(stats, board.items);
+  } catch (e) {
+    // a failed refresh keeps what is already on screen
+  }
 }
 
 // accuracy over the last races as a small line chart, oldest on the left

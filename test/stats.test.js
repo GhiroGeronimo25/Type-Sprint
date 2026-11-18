@@ -119,22 +119,3 @@ test('a short fast burst is never flagged as an unsustainable average (it needs 
   race.a.fire('room:leave');
   await sleep(30);
 });
-
-test('stats:get returns your stats and the leaderboard, for your pid only', async () => {
-  calls.length = 0;
-  const a = connect();
-  const res = await a.ask('stats:get', { pid: 'someone-1' });
-  assert.strictEqual(res.ok, true);
-  assert.strictEqual(res.stats.bestWpm, 80);
-  assert.strictEqual(res.leaderboard[0].name, 'Ann');
-  assert.ok(!('pid' in res.leaderboard[0]), 'the leaderboard never exposes a pid');
-  assert.deepStrictEqual(calls.find((c) => c[0] === 'playerStats'), ['playerStats', 'someone-1']);
-  assert.deepStrictEqual(calls.find((c) => c[0] === 'leaderboard'), ['leaderboard', 20, 'someone-1']);
-
-  const again = await a.ask('stats:get', { pid: 'someone-1' });         // straight away: too soon
-  assert.strictEqual(again.ok, false);
-  const junk = connect();
-  const cleaned = await junk.ask('stats:get', { pid: "x'; drop table accounts;--" });
-  assert.strictEqual(cleaned.ok, true);
-  assert.deepStrictEqual(calls.filter((c) => c[0] === 'playerStats').pop(), ['playerStats', 'xdroptableaccounts--'], 'the pid is cleaned before it is used');
-});

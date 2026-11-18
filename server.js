@@ -201,6 +201,29 @@ app.get('/api/races/:id', requireLogin, function (req, res) {
   });
 });
 
+// ---------- REST API: stats and leaderboard ----------
+// GET /api/stats -> your own stats: { races, flaggedRaces, bestWpm, avgWpm, trend: [...], mostMissed: [{ ch, misses }] }
+app.get('/api/stats', requireLogin, function (req, res) {
+  accounts.playerStats(req.user.id).then(function (stats) {
+    res.json(stats);
+  }).catch(function (e) {
+    console.error('Could not load stats:', e.message);
+    res.status(500).json({ error: 'Could not load your stats.' });
+  });
+});
+
+// GET /api/leaderboard?limit=20 -> ranked players by rating (limit 1-50, default 20). Your own row has isYou: true.
+//   -> { items: [{ name, rating, races, wins, bestWpm, isYou }] }. Never contains a pid.
+app.get('/api/leaderboard', requireLogin, function (req, res) {
+  const limit = Math.min(Math.max(parseInt((req.query || {}).limit, 10) || 20, 1), 50);
+  accounts.leaderboard(limit, req.user.id).then(function (rows) {
+    res.json({ items: rows });
+  }).catch(function (e) {
+    console.error('Could not load leaderboard:', e.message);
+    res.status(500).json({ error: 'Could not load the leaderboard.' });
+  });
+});
+
 const rooms = {}; // rooms['ABCD'] = { code, hostId, status, text, startAt, players: [] }
 
 // ---------- helpers ----------
@@ -844,20 +867,6 @@ function onConnection(socket) {
     });
   }
 
-  // your stats and the leaderboard (never includes anybody's pid)
-  socket.on('stats:get', function (data, ack) {
-    if (typeof ack !== 'function') return;
-    const now = Date.now();
-    if (socket.data.lastStats && now - socket.data.lastStats < 500) return ack({ ok: false, error: 'Too many requests' });
-    socket.data.lastStats = now;
-    const pid = socket.data.pid;
-    Promise.all([accounts.playerStats(pid), accounts.leaderboard(20, pid)]).then(function (both) {
-      ack({ ok: true, stats: both[0], leaderboard: both[1] });
-    }).catch(function (e) {
-      console.error('Could not load stats:', e.message);
-      ack({ ok: false });
-    });
-  });
   // quick match: queue for a race with players of a similar rating (same type and difficulty)
   socket.on('match:join', function (data, ack) { onMatchJoin(data, ack).catch(logError('match:join')); });
   socket.on('match:cancel', function (data, ack) {

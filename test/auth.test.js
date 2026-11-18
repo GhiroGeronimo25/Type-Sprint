@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { connect, runAuth, called } = require('./harness');
+const { connect, runAuth, called, apiGet } = require('./harness');
 
 test('a valid login token sets the player id from the verified user', async () => {
   const { err, socket } = await runAuth('token:user-123');
@@ -23,7 +23,7 @@ test('the player id in a message is ignored: the verified login decides who you 
   const joined = called('join').map((c) => c[1]);
   assert.ok(joined.includes('real-me'));
   assert.ok(!joined.includes('victim-account'), 'must never act as the spoofed pid');
-  await a.ask('stats:get', { pid: 'victim-account' });
+  await apiGet('/api/stats', { token: 'token:real-me', query: { pid: 'victim-account' } });
   assert.ok(called('playerStats').some((c) => c[1] === 'real-me'));
   assert.ok(!called('playerStats').some((c) => c[1] === 'victim-account'));
 });
