@@ -22,11 +22,33 @@ const server = http.createServer(app);
 const io = new socketio.Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 
+// The browser needs the project URL and the ANON key to show the login form. Both are public by design.
+// (Never expose SUPABASE_SERVICE_KEY here.)
+app.get('/config.json', function (req, res) {
+  res.json({ supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '' });
+});
+
 // ---------- saved results (survive restarts) ----------
 const DATA_DIR = path.join(__dirname, 'data');
 const RESULTS_FILE = path.join(DATA_DIR, 'results.json');
 const accounts = createAccounts(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const ENTRY_FEE = accounts.ENTRY_FEE;
+
+// Every socket must log in first. The browser sends its Supabase access token in the handshake; we verify it
+// and remember who it belongs to. From here on the player id (pid) is the verified Supabase user id and is
+// NEVER taken from what the client sends, so nobody can play (or spend coins) as someone else.
+io.use(async function (socket, next) {
+  try {
+    const user = await accounts.verifyToken(((socket.handshake || {}).auth || {}).token);
+    if (!user) return next(new Error('unauthorized'));
+    socket.data.pid = user.id;
+    socket.data.email = user.email;
+    next();
+  } catch (e) {
+    console.error('Login check failed:', e.message);
+    next(new Error('unauthorized'));
+  }
+});
 let results = [];
 try {
   results = JSON.parse(fs.readFileSync(RESULTS_FILE, 'utf8'));
@@ -106,10 +128,6 @@ function nameTaken(room, name) {
     if (room.players[i].name === name) return true;
   }
   return false;
-}
-
-function cleanPid(value) {
-  return String(value || '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 40);
 }
 
 function findByPid(room, pid) {
@@ -595,7 +613,7 @@ function onConnection(socket) {
     const difficulty = passages.isDifficulty((data || {}).difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY; // anything else becomes the default
     const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, status: 'lobby', text: '', startAt: 0, players: [] };
     rooms[room.code] = room;
-    const player = joinRoom(socket, room, (data || {}).name, cleanPid((data || {}).pid));
+    const player = joinRoom(socket, room, (data || {}).name, socket.data.pid);
     try {
       await registerPlayer(room, player);
     } catch (e) {
@@ -610,7 +628,7 @@ function onConnection(socket) {
     data = data || {};
     const code = String(data.code || '').toUpperCase().slice(0, 4);
     const room = rooms[code];
-    const pid = cleanPid(data.pid);
+    const pid = socket.data.pid;
     const existing = room && findByPid(room, pid);
     const started = room && (room.starting || room.status === 'countdown' || room.status === 'racing');
     let error = '';
@@ -640,7 +658,7 @@ function onConnection(socket) {
     if (typeof ack !== 'function') return;
     data = data || {};
     const room = rooms[String(data.code || '').toUpperCase().slice(0, 4)];
-    const p = room && findByPid(room, cleanPid(data.pid));
+    const p = room && findByPid(room, socket.data.pid);
     if (!p) return ack({ ok: false, error: 'That room no longer exists.' });
     if (socket.data.code && socket.data.code !== room.code) return ack({ ok: false, error: 'You are already in a room.' });
 
@@ -685,7 +703,7 @@ function onConnection(socket) {
 
   function onAccount(data, ack) {
     if (typeof ack !== 'function') return;
-    accounts.view(cleanPid((data || {}).pid)).then(function (view) {
+    accounts.view(socket.data.pid).then(function (view) {
       ack(view ? { ok: true, account: view } : { ok: false });
     }).catch(function (e) {
       console.error('Could not load account:', e.message);
@@ -699,7 +717,7 @@ function onConnection(socket) {
     const now = Date.now();
     if (socket.data.lastStats && now - socket.data.lastStats < 500) return ack({ ok: false, error: 'Too many requests' });
     socket.data.lastStats = now;
-    const pid = cleanPid((data || {}).pid);
+    const pid = socket.data.pid;
     Promise.all([accounts.playerStats(pid), accounts.leaderboard(20, pid)]).then(function (both) {
       ack({ ok: true, stats: both[0], leaderboard: both[1] });
     }).catch(function (e) {
@@ -721,7 +739,7 @@ function onConnection(socket) {
     if (socket.data.lastMatch && now - socket.data.lastMatch < 500) return ack({ ok: false, error: 'Slow down a little.' });
     socket.data.lastMatch = now;
 
-    const pid = cleanPid(data.pid) || socket.id;
+    const pid = socket.data.pid;
     if (socket.data.searching || matchmaker.has(pid)) return ack({ ok: false, error: 'You are already searching for a match.' });
     const ranked = data.ranked !== false; // ranked unless the player picked casual
     const difficulty = passages.isDifficulty(data.difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY;

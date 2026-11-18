@@ -10,11 +10,14 @@ const emits = [];                       // every message the server sent: { targ
 const calls = [];                       // every accounts call: [name, ...args]
 const wallets = {};                     // pid -> coins, for the fake accounts
 let onConnection;
+let authMiddleware;
 
 function fakeAccounts() {
   const log = (name) => (...args) => { calls.push([name, ...args]); };
   return {
     ENTRY_FEE: 50,
+    // test tokens look like "token:<userId>"; anything else is a forged or missing login
+    verifyToken: async (token) => (/^token:[A-Za-z0-9-]+$/.test(String(token)) ? { id: String(token).slice(6), email: '' } : null),
     join: async (pid) => { calls.push(['join', pid]); if (!(pid in wallets)) wallets[pid] = 500; return { rating: 1000, coins: wallets[pid], races: 0, wins: 0, ledger: [], entryFee: 50 }; },
     view: async (pid) => ({ rating: 1000, coins: wallets[pid] || 0, races: 0, wins: 0, ledger: [], entryFee: 50 }),
     collectEntries: async (code, pids, fee) => {
@@ -47,7 +50,7 @@ Module._load = function (request, parent, isMain) {
     return express;
   }
   if (request === 'socket.io') {
-    return { Server: class { to(target) { return { emit: (ev, data) => emits.push({ target, ev, data }) }; } on(ev, fn) { if (ev === 'connection') onConnection = fn; } } };
+    return { Server: class { use(fn) { authMiddleware = fn; } to(target) { return { emit: (ev, data) => emits.push({ target, ev, data }) }; } on(ev, fn) { if (ev === 'connection') onConnection = fn; } } };
   }
   if (request === 'http') return { createServer: () => ({ listen: (p, cb) => cb && cb() }) };
   if (request === './accounts') return () => fakeAccounts();
@@ -60,21 +63,29 @@ require(path.join(__dirname, '..', 'server.js'));
 Module._load = realLoad;
 
 let counter = 0;
-function connect() {
+// connect() simulates a logged-in player. The server takes the player id from the verified login, never from
+// the message, so the fake logs each message's sender in as the pid the test names in it (data.pid).
+// connect({ loginAs: 'x' }) pins the login to 'x', so a test can try to spoof somebody else in the message.
+function connect(opts) {
   const id = 'sock' + ++counter;
   const handlers = {};
+  const pinned = opts && opts.loginAs;
   const socket = {
-    id, data: {}, handlers,
+    id, data: {}, handlers, handshake: { auth: {} },
     on(ev, fn) { handlers[ev] = fn; },
     join() {}, leave() {},
     emit(ev, data) { emits.push({ target: id, ev, data }); },
   };
   onConnection(socket);
-  const ask = (ev, data) => new Promise((resolve) => handlers[ev](data, resolve));
-  return { socket, ask, fire: (ev, data) => handlers[ev](data) };
+  const login = (data) => { socket.data.pid = pinned || String((data && data.pid) || socket.id).replace(/[^A-Za-z0-9-]/g, '').slice(0, 40); };
+  const ask = (ev, data) => new Promise((resolve) => { login(data); handlers[ev](data, resolve); });
+  return { socket, ask, fire: (ev, data) => { login(data); handlers[ev](data); } };
 }
 const lastState = (code) => [...emits].reverse().find((e) => e.ev === 'room:state' && e.data.code === code).data;
 const called = (name) => calls.filter((c) => c[0] === name);
 
 
-module.exports = { sleep, emits, calls, wallets, connect, lastState, called };
+module.exports = { runAuth: (token) => new Promise((resolve) => {
+  const socket = { handshake: { auth: { token } }, data: {} };
+  authMiddleware(socket, (err) => resolve({ err, socket }));
+}), sleep, emits, calls, wallets, connect, lastState, called };

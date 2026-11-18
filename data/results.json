@@ -1,0 +1,116 @@
+[
+  {
+    "room": "XCWD",
+    "ranked": false,
+    "difficulty": "medium",
+    "endedAt": "2026-11-18T04:20:41.365Z",
+    "text": "The market opened before sunrise, and by seven the air smelled of fresh bread, warm oranges, and coffee. Vendors shouted prices across the aisles as if the whole city were a friendly auction.",
+    "players": [
+      {
+        "rank": 1,
+        "coins": 0,
+        "name": "A",
+        "wpm": 22,
+        "accuracy": 80,
+        "finished": false,
+        "progress": 2.1,
+        "seconds": null
+      }
+    ]
+  },
+  {
+    "room": "WJHT",
+    "ranked": false,
+    "difficulty": "medium",
+    "endedAt": "2026-11-18T04:20:43.877Z",
+    "text": "The mountain trail curved along a cold river before climbing into the pines. At the summit, the clouds parted just long enough to show a valley full of tiny lights and quiet roofs.",
+    "players": [
+      {
+        "rank": 1,
+        "coins": 0,
+        "name": "A",
+        "wpm": 11,
+        "accuracy": 100,
+        "finished": false,
+        "progress": 1.1,
+        "seconds": null
+      }
+    ]
+  },
+  {
+    "room": "UVLB",
+    "ranked": false,
+    "difficulty": "medium",
+    "endedAt": "2026-11-18T04:20:51.419Z",
+    "text": "When the power went out, the neighbors gathered on the stairs with candles and half-finished stories. By midnight, strangers were sharing blankets, and the building felt more like a village.",
+    "players": [
+      {
+        "rank": 1,
+        "coins": 0,
+        "name": "A",
+        "wpm": 22,
+        "accuracy": 100,
+        "finished": false,
+        "progress": 2.1,
+        "seconds": null
+      }
+    ]
+  },
+  {
+    "room": "NZBN",
+    "ranked": false,
+    "difficulty": "medium",
+    "endedAt": "2026-11-18T04:20:53.932Z",
+    "text": "The lighthouse keeper climbed the spiral stairs every evening, counting each step out of habit. By the time the lamp caught fire, the whole coast knew that another night had safely begun.",
+    "players": [
+      {
+        "rank": 1,
+        "coins": 0,
+        "name": "A",
+        "wpm": 218,
+        "accuracy": 100,
+        "finished": false,
+        "progress": 21.4,
+        "seconds": null
+      }
+    ]
+  },
+  {
+    "room": "AAFK",
+    "ranked": false,
+    "difficulty": "medium",
+    "endedAt": "2026-11-18T04:20:57.993Z",
+    "text": "A good sprint is not about hitting every key as hard as possible. It is about finding a rhythm, trusting your fingers, and letting the words arrive one after another without hurry.",
+    "players": [
+      {
+        "rank": 1,
+        "coins": 0,
+        "name": "A",
+        "wpm": 153,
+        "accuracy": 100,
+        "finished": false,
+        "progress": 15.6,
+        "seconds": null
+      }
+    ]
+  },
+  {
+    "room": "FBKK",
+    "ranked": false,
+    "difficulty": "easy",
+    "endedAt": "2026-11-18T04:21:07.998Z",
+    "text": "She put the book on the shelf and went to bed. The house was quiet, and the night was calm.",
+    "players": [
+      {
+        "rank": 1,
+        "coins": 0,
+        "name": "A",
+        "wpm": 269,
+        "accuracy": 100,
+        "finished": true,
+        "progress": 100,
+        "seconds": 4.1
+      }
+    ]
+  }
+]

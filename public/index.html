@@ -9,12 +9,34 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=8">
+  <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
   <main>
+    <!-- Login -->
+    <section id="auth" class="screen" hidden>
+      <h1>Type Sprint</h1>
+      <p class="lede">Log in to race, earn coins and climb the leaderboard.</p>
+      <form id="authForm" class="join-card" novalidate>
+        <label for="authEmail">Email</label>
+        <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
+        <label for="authPassword">Password</label>
+        <input id="authPassword" type="password" autocomplete="current-password" minlength="6" placeholder="At least 6 characters" required>
+        <p id="authMsg" class="auth-msg" role="alert" hidden></p>
+        <div class="actions">
+          <button id="signIn" class="btn" type="submit">Log in</button>
+          <span class="or">or</span>
+          <button id="signUp" class="btn secondary" type="button">Create account</button>
+        </div>
+      </form>
+    </section>
+
     <!-- Home -->
-    <section id="home" class="screen">
+    <section id="home" class="screen" hidden>
+      <div id="userBar" class="user-bar">
+        <span class="muted">Logged in as <b id="userEmail"></b></span>
+        <button id="signOut" class="btn ghost" type="button">Log out</button>
+      </div>
       <h1>Type Sprint</h1>
       <span class="sticker">Up to 5 racers<br>live scoring</span>
       <p class="lede">Race up to five people on the same passage. The server counts every keystroke, so the scoreboard is the truth.</p>
@@ -139,6 +161,7 @@
   <div id="toast" role="status" aria-live="polite"></div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

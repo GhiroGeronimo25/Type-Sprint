@@ -1,19 +1,118 @@
-const socket = io();
+// The socket stays disconnected until the player is logged in. Every (re)connect sends a fresh access token,
+// and the server uses it to decide who this is.
+const socket = io({
+  autoConnect: false,
+  auth: function (cb) {
+    getAccessToken().then(function (token) { cb({ token: token }); });
+  },
+});
 
 function $(id) {
   return document.getElementById(id);
 }
 
-// a permanent id for this browser, so the server can recognise us after a refresh or reconnect
-function getPid() {
-  let id = localStorage.getItem('pid');
-  if (!id) {
-    id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
-    localStorage.setItem('pid', id);
-  }
-  return id;
+// ---------- login (Supabase Auth) ----------
+// pid is only used on this screen (for example to mark "you"). The server never trusts it: it uses the id
+// from the verified login token instead.
+let pid = null;
+let supa = null;
+
+async function getAccessToken() {
+  if (!supa) return '';
+  const res = await supa.auth.getSession(); // refreshes an expired token when needed
+  return res.data.session ? res.data.session.access_token : '';
 }
-const pid = getPid();
+
+function showAuthMessage(text, isError) {
+  $('authMsg').hidden = !text;
+  $('authMsg').textContent = text || '';
+  $('authMsg').classList.toggle('error', !!isError);
+}
+
+function setAuthBusy(busy) {
+  $('signIn').disabled = busy;
+  $('signUp').disabled = busy;
+}
+
+function friendlyAuthError(error) {
+  const m = String(error && error.message || '');
+  if (/invalid login/i.test(m)) return 'Wrong email or password.';
+  if (/already registered/i.test(m)) return 'That email already has an account. Try logging in.';
+  if (/email not confirmed/i.test(m)) return 'Please confirm your email first (check your inbox).';
+  return m || 'Something went wrong. Please try again.';
+}
+
+async function onSignIn(event) {
+  if (event) event.preventDefault();
+  showAuthMessage('');
+  setAuthBusy(true);
+  const res = await supa.auth.signInWithPassword({ email: $('authEmail').value.trim(), password: $('authPassword').value });
+  setAuthBusy(false);
+  if (res.error) showAuthMessage(friendlyAuthError(res.error), true);
+  // success is handled by onAuthChange
+}
+
+async function onSignUp() {
+  showAuthMessage('');
+  const email = $('authEmail').value.trim();
+  const password = $('authPassword').value;
+  if (!email || password.length < 6) return showAuthMessage('Enter an email and a password of at least 6 characters.', true);
+  setAuthBusy(true);
+  const res = await supa.auth.signUp({ email: email, password: password });
+  setAuthBusy(false);
+  if (res.error) return showAuthMessage(friendlyAuthError(res.error), true);
+  // with email confirmation switched on there is no session yet
+  if (!res.data.session) showAuthMessage('Account created. Check your email to confirm it, then log in.', false);
+}
+
+async function onSignOut() {
+  await supa.auth.signOut(); // onAuthChange does the rest
+}
+
+// called whenever the login state changes (page load, log in, log out, token refresh)
+function onAuthChange(session) {
+  if (session && session.user) {
+    const changedUser = pid !== session.user.id;
+    pid = session.user.id;
+    $('userEmail').textContent = session.user.email || '';
+    $('authPassword').value = '';
+    if (changedUser) socket.disconnect(); // a different person logged in: start a fresh connection
+    socket.connect();                     // does nothing if already connected
+    if (!state.room) showScreen('home');
+  } else {
+    pid = null;
+    localStorage.removeItem('session');
+    socket.disconnect();
+    state.room = null;
+    state.account = null;
+    $('typing').disabled = true;
+    history.replaceState(null, '', location.pathname);
+    showScreen('auth');
+  }
+}
+
+async function startAuth() {
+  let config;
+  try {
+    config = await (await fetch('/config.json')).json();
+  } catch (e) {
+    config = {};
+  }
+  if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) {
+    showScreen('auth');
+    return showAuthMessage('Login is not set up yet: the server needs SUPABASE_URL and SUPABASE_ANON_KEY.', true);
+  }
+  supa = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  $('authForm').addEventListener('submit', onSignIn);
+  $('signUp').addEventListener('click', onSignUp);
+  $('signOut').addEventListener('click', onSignOut);
+  supa.auth.onAuthStateChange(function (event, session) {
+    if (event === 'TOKEN_REFRESHED') return; // same user: nothing to redo
+    onAuthChange(session);
+  });
+  const first = await supa.auth.getSession();
+  onAuthChange(first.data.session);
+}
 
 // what the screen remembers between server updates
 const state = { account: null, result: null, room: null, text: '', startAt: 0, limitMs: 60000, offset: 0, chars: [], restore: '' };
@@ -59,6 +158,7 @@ function hideToast() {
 }
 
 function showScreen(name) {
+  $('auth').hidden = name !== 'auth';
   $('home').hidden = name !== 'home';
   $('room').hidden = name !== 'room';
 }
@@ -394,6 +494,12 @@ socket.on('race:notice', function (data) { showToast(data.message); });
 socket.on('match:status', onMatchStatus);
 socket.on('match:found', onMatchFound);
 socket.on('disconnect', onDisconnect);
+socket.on('connect_error', function (err) {
+  if (err && err.message === 'unauthorized') {
+    showToast('Your login expired. Please log in again.');
+    if (supa) supa.auth.signOut();
+  }
+});
 
 // ---------- drawing the room (runs on every server update) ----------
 function render() {
@@ -599,3 +705,5 @@ function updateClock() {
 }
 
 setInterval(updateClock, 100);
+
+startAuth();

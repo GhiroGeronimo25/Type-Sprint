@@ -34,6 +34,15 @@ function createAccounts(url, serviceKey) {
     throw lastError;
   }
 
+  // Checks a Supabase access token (the JWT the browser got when logging in) and returns
+  // { id, email } for that user, or null if the token is missing, forged or expired.
+  async function verifyToken(token) {
+    if (!token || typeof token !== 'string') return null;
+    const res = await db.auth.getUser(token);
+    if (res.error || !res.data || !res.data.user) return null;
+    return { id: res.data.user.id, email: res.data.user.email || '' };
+  }
+
   function withFee(view) {
     if (view) view.entryFee = ENTRY_FEE;
     return view;
@@ -114,7 +123,7 @@ function createAccounts(url, serviceKey) {
   }
 
   return {
-    join: join, view: view,
+    verifyToken: verifyToken, join: join, view: view,
     recordRaceStats: recordRaceStats, playerStats: playerStats, leaderboard: leaderboard,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
     settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,
