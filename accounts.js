@@ -97,8 +97,25 @@ function createAccounts(url, serviceKey) {
     });
   }
 
+  // Saves how everyone typed in a finished race (and any anti-cheat flags) in one transaction.
+  // players: [{ pid, wpm, accuracy, progress, finished, missed: { char: count }, flags: [{ reason, count, detail }] }]
+  async function recordRaceStats(code, ranked, difficulty, players) {
+    return call('record_race_stats', { p_code: code, p_ranked: ranked, p_difficulty: difficulty, p_players: players });
+  }
+
+  // best and average WPM, accuracy trend (last 20 races, oldest first) and the 5 most-missed characters
+  async function playerStats(pid) {
+    return call('player_stats', { p_pid: pid });
+  }
+
+  // ranked players by rating; the row of the player asking (pid) is marked isYou. Never contains a pid.
+  async function leaderboard(limit, pid) {
+    return call('leaderboard', { p_limit: limit || 20, p_pid: pid || null });
+  }
+
   return {
     join: join, view: view,
+    recordRaceStats: recordRaceStats, playerStats: playerStats, leaderboard: leaderboard,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
     settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,
   };

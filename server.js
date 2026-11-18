@@ -4,15 +4,18 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const socketio = require('socket.io');
-const PASSAGES = require('./passages');
+const passages = require('./passages'); // the text bank, grouped by difficulty
 const createAccounts = require('./accounts');
+const createMatchmaker = require('./matchmaker'); // the quick-match queue
 
 const PORT = process.env.PORT || 3000;
 const COUNTDOWN_MS = Number(process.env.COUNTDOWN_MS) || 3000; // wait before the race starts (env override is for tests)
 const RACE_MS = Number(process.env.RACE_MS) || 60000;           // race length
 const MAX_PLAYERS = 5;
 const GRACE_MS = 120000;   // how long a disconnected player's seat is held for them
-const MAX_CPS = 25;        // fastest believable typing speed (characters per second)
+const MAX_CPS = 25;        // fastest believable typing speed (characters per second); anything beyond is rejected and flagged
+const FLAG_WPM = 250;      // an average speed no human sustains: flagged (needs FLAG_MIN_LETTERS so a short burst can't trip it)
+const FLAG_MIN_LETTERS = 40;
 
 const app = express();
 const server = http.createServer(app);
@@ -64,7 +67,7 @@ function recordRace(room) {
     });
   }
   if (!anyone) return;
-  results.push({ room: room.code, ranked: room.ranked, endedAt: new Date().toISOString(), text: room.text, players: players });
+  results.push({ room: room.code, ranked: room.ranked, difficulty: room.difficulty, endedAt: new Date().toISOString(), text: room.text, players: players });
   if (results.length > 500) results = results.slice(-500);
   saveResults();
 }
@@ -153,6 +156,8 @@ function resetPlayer(p) {
   p.correct = 0;   // letters typed correctly in a row
   p.keys = 0;      // letters typed
   p.errors = 0;    // wrong letters typed
+  p.missed = {};   // the letters they should have typed and got wrong: { 'e': 3 }
+  p.flags = {};    // anti-cheat: { paste: { count, detail }, burst: ..., speed: ... }
   p.wpm = 0;
   p.accuracy = 100;
   p.finished = false;
@@ -171,6 +176,31 @@ function updateStats(room, p) {
 }
 
 // returns false if the input looks fake (paste, bots) so the client can be reset
+// anti-cheat: note what happened (once per kind per race, with a count) so it can be saved and reviewed
+function flag(p, reason, detail) {
+  if (p.flags[reason]) p.flags[reason].count++;
+  else p.flags[reason] = { count: 1, detail: detail };
+}
+
+// what gets saved about each racer when the race ends: typing stats, missed letters and any flags
+function statsPayload(room) {
+  return room.players.filter(function (p) {
+    return p.entered && (p.keys > 0 || Object.keys(p.flags).length > 0); // someone who only tried to paste still gets flagged
+  }).map(function (p) {
+    return {
+      pid: p.pid,
+      wpm: p.wpm,
+      accuracy: p.accuracy,
+      progress: Math.round((p.correct / room.text.length) * 1000) / 10,
+      finished: p.finished,
+      missed: p.missed,
+      flags: Object.keys(p.flags).map(function (reason) {
+        return { reason: reason, count: p.flags[reason].count, detail: p.flags[reason].detail };
+      }),
+    };
+  });
+}
+
 function handleInput(room, p, input) {
   if (room.status !== 'racing' || !p.entered || p.finished || Date.now() < room.startAt) return true;
 
@@ -178,14 +208,23 @@ function handleInput(room, p, input) {
   const correct = commonPrefix(input, room.text);
   const seconds = (Date.now() - room.startAt) / 1000;
 
-  if (input.length - p.input.length > 4) return false;  // pasted text
+  if (input.length - p.input.length > 4) {              // pasted text
+    flag(p, 'paste', (input.length - p.input.length) + ' letters in one message');
+    return false;
+  }
   if (input.length - correct > 10) return false;        // too many wrong letters
-  if (correct > MAX_CPS * seconds + 5) return false;    // faster than a human
+  if (correct > MAX_CPS * seconds + 5) {                // faster than a human
+    flag(p, 'burst', correct + ' correct letters after ' + seconds.toFixed(1) + ' seconds');
+    return false;
+  }
 
   // only new letters count as keystrokes, backspace is free
   for (let i = p.input.length; i < input.length; i++) {
     p.keys++;
-    if (input[i] !== room.text[i]) p.errors++;
+    if (input[i] !== room.text[i]) {
+      p.errors++;
+      p.missed[room.text[i]] = (p.missed[room.text[i]] || 0) + 1;
+    }
   }
   p.input = input;
   p.correct = correct;
@@ -195,6 +234,9 @@ function handleInput(room, p, input) {
     p.finishedAt = Date.now();
   }
   updateStats(room, p);
+  if (p.correct >= FLAG_MIN_LETTERS && p.wpm > FLAG_WPM) {
+    flag(p, 'speed', p.wpm + ' WPM after ' + p.correct + ' letters'); // accepted, but no human averages this
+  }
   if (p.finished && allFinished(room)) endRace(room);
   return true;
 }
@@ -228,6 +270,7 @@ function broadcast(room) {
     startAt: room.startAt,
     serverNow: Date.now(),
     ranked: room.ranked,
+    difficulty: room.difficulty,
     fee: ENTRY_FEE,
     pot: room.pot || 0,
     players: players,
@@ -282,7 +325,7 @@ async function startRace(room) {
     }
   }
 
-  room.text = PASSAGES[Math.floor(Math.random() * PASSAGES.length)];
+  room.text = passages.pick(room.difficulty, room.text); // the server chooses: from the room's difficulty, never the same passage twice in a row
   room.status = 'countdown';
   room.startAt = Date.now() + COUNTDOWN_MS;
   room.pot = room.ranked ? entered.length * ENTRY_FEE : 0;
@@ -380,6 +423,10 @@ function endRace(room) {
   for (let i = 0; i < room.players.length; i++) {
     if (!room.players[i].finished) updateStats(room, room.players[i]);
   }
+  const stats = statsPayload(room);
+  if (stats.length > 0) { // saved for every race, ranked or casual; a flagged race will not count towards anyone's stats
+    accounts.recordRaceStats(room.code, room.ranked, room.difficulty, stats).catch(logError('Could not save race stats'));
+  }
   room.players.sort(byRank);
   broadcast(room);
   room.settling = true; // the payout is in flight: no new race until it is done
@@ -391,8 +438,13 @@ function endRace(room) {
 }
 
 // ---------- joining and leaving ----------
+function cleanName(rawName) {
+  return String(rawName || '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Racer';
+}
+
 function joinRoom(socket, room, rawName, pid) {
-  const base = String(rawName || '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 16) || 'Racer';
+  cancelSearch(socket); // joining a room ends any quick-match search
+  const base = cleanName(rawName);
   let name = base;
   let n = 1;
   while (nameTaken(room, name)) {
@@ -491,13 +543,57 @@ function dropConnection(socket) {
 }
 
 // ---------- socket events ----------
+// ---------- quick match ----------
+const matchmaker = createMatchmaker({ fillMs: Number(process.env.MM_FILL_MS) || 5000 }); // the env override is for tests
+
+function cancelSearch(socket) {
+  if (socket.data.searching) {
+    matchmaker.remove(socket.data.searching);
+    socket.data.searching = null;
+  }
+}
+
+// a group of players the queue has matched: put them in a fresh room and start the countdown
+function startMatch(group) {
+  const first = group[0];
+  const room = {
+    code: randomCode(), hostId: first.socket.id, ranked: first.ranked, difficulty: first.difficulty,
+    status: 'lobby', text: '', startAt: 0, players: [],
+  };
+  rooms[room.code] = room;
+  group.forEach(function (t) {
+    t.socket.data.searching = null;
+    const player = joinRoom(t.socket, room, t.name, t.pid);
+    player.rating = t.rating;
+    io.to(t.socket.id).emit('match:found', { code: room.code });
+    sendAccount(player);
+  });
+  startRace(room).then(function (error) {
+    if (error) io.to(room.code).emit('race:notice', { message: error });
+  }).catch(logError('Could not start matched race ' + room.code));
+}
+
+function runMatchmaking() {
+  matchmaker.take(Date.now()).forEach(startMatch);
+}
+
+// every second: make any matches that are ready, and tell each searcher how it is going
+setInterval(function () {
+  runMatchmaking();
+  const now = Date.now();
+  matchmaker.all().forEach(function (t) {
+    io.to(t.socket.id).emit('match:status', { waitedMs: now - t.joinedAt, searching: matchmaker.poolSize(t) });
+  });
+}, Number(process.env.MM_TICK_MS) || 1000).unref();
+
 function onConnection(socket) {
   socket.data.code = null;
 
   async function onCreate(data, ack) {
     if (socket.data.code) return;
     const ranked = (data || {}).ranked !== false; // ranked unless the host picked casual
-    const room = { code: randomCode(), hostId: socket.id, ranked: ranked, status: 'lobby', text: '', startAt: 0, players: [] };
+    const difficulty = passages.isDifficulty((data || {}).difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY; // anything else becomes the default
+    const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, status: 'lobby', text: '', startAt: 0, players: [] };
     rooms[room.code] = room;
     const player = joinRoom(socket, room, (data || {}).name, cleanPid((data || {}).pid));
     try {
@@ -597,7 +693,71 @@ function onConnection(socket) {
     });
   }
 
+  // your stats and the leaderboard (never includes anybody's pid)
+  socket.on('stats:get', function (data, ack) {
+    if (typeof ack !== 'function') return;
+    const now = Date.now();
+    if (socket.data.lastStats && now - socket.data.lastStats < 500) return ack({ ok: false, error: 'Too many requests' });
+    socket.data.lastStats = now;
+    const pid = cleanPid((data || {}).pid);
+    Promise.all([accounts.playerStats(pid), accounts.leaderboard(20, pid)]).then(function (both) {
+      ack({ ok: true, stats: both[0], leaderboard: both[1] });
+    }).catch(function (e) {
+      console.error('Could not load stats:', e.message);
+      ack({ ok: false });
+    });
+  });
+  // quick match: queue for a race with players of a similar rating (same type and difficulty)
+  socket.on('match:join', function (data, ack) { onMatchJoin(data, ack).catch(logError('match:join')); });
+  socket.on('match:cancel', function (data, ack) {
+    cancelSearch(socket);
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+  async function onMatchJoin(data, ack) {
+    if (typeof ack !== 'function') return;
+    data = data || {};
+    if (socket.data.code) return ack({ ok: false, error: 'Leave your current room first.' });
+    const now = Date.now();
+    if (socket.data.lastMatch && now - socket.data.lastMatch < 500) return ack({ ok: false, error: 'Slow down a little.' });
+    socket.data.lastMatch = now;
+
+    const pid = cleanPid(data.pid) || socket.id;
+    if (socket.data.searching || matchmaker.has(pid)) return ack({ ok: false, error: 'You are already searching for a match.' });
+    const ranked = data.ranked !== false; // ranked unless the player picked casual
+    const difficulty = passages.isDifficulty(data.difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY;
+    const name = cleanName(data.name);
+
+    let account;
+    try {
+      account = await accounts.join(pid, name);
+    } catch (e) {
+      console.error('Could not create account for matchmaking:', e.message);
+      return ack({ ok: false, error: 'Could not reach the account service. Please try again.' });
+    }
+    if (ranked && account.coins < ENTRY_FEE) {
+      return ack({ ok: false, error: 'You need ' + ENTRY_FEE + ' coins for a ranked match. Try a casual match.' });
+    }
+    // things can change while the database answers
+    if (socket.data.gone || socket.data.code || socket.data.searching || matchmaker.has(pid)) {
+      return ack({ ok: false, error: 'Could not start searching. Please try again.' });
+    }
+    matchmaker.add({ id: pid, pid: pid, socket: socket, name: name, rating: account.rating, ranked: ranked, difficulty: difficulty, joinedAt: Date.now() });
+    socket.data.searching = pid;
+    ack({ ok: true });
+    runMatchmaking(); // someone may already be waiting
+  }
   socket.on('account:get', onAccount);
+  // the host picks how hard the next passage will be (only between races, and only a real difficulty)
+  socket.on('room:difficulty', function (data) {
+    const room = rooms[socket.data.code];
+    if (!room || room.hostId !== socket.id) return;
+    if (room.status !== 'lobby' && room.status !== 'finished') return;
+    if (room.starting || room.settling) return;
+    const difficulty = (data || {}).difficulty;
+    if (!passages.isDifficulty(difficulty) || difficulty === room.difficulty) return;
+    room.difficulty = difficulty;
+    broadcast(room);
+  });
   socket.on('room:create', function (data, ack) { onCreate(data, ack).catch(logError('room:create')); });
   socket.on('room:join', function (data, ack) { onJoin(data, ack).catch(logError('room:join')); });
   socket.on('race:start', function () { onStart().catch(logError('race:start')); });
@@ -605,6 +765,8 @@ function onConnection(socket) {
   socket.on('room:rejoin', onRejoin);
   socket.on('room:leave', onLeave);
   socket.on('disconnect', function () {
+    socket.data.gone = true;
+    cancelSearch(socket);
     dropConnection(socket);
   });
 }

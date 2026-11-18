@@ -1,78 +1,9 @@
 'use strict';
-// Checks ranked vs casual rooms by running the real server.js against fake Express, Socket.IO and
-// accounts modules. No database or network needed.
+// Checks ranked vs casual rooms, forfeits and passage difficulty against the real server.js
+// (see harness.js for the fake modules).
 const test = require('node:test');
 const assert = require('node:assert');
-const Module = require('module');
-const path = require('path');
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const emits = [];                       // every message the server sent: { target, ev, data }
-const calls = [];                       // every accounts call: [name, ...args]
-const wallets = {};                     // pid -> coins, for the fake accounts
-let onConnection;
-
-function fakeAccounts() {
-  const log = (name) => (...args) => { calls.push([name, ...args]); };
-  return {
-    ENTRY_FEE: 50,
-    join: async (pid) => { calls.push(['join', pid]); if (!(pid in wallets)) wallets[pid] = 500; return { rating: 1000, coins: wallets[pid], races: 0, wins: 0, ledger: [], entryFee: 50 }; },
-    view: async (pid) => ({ rating: 1000, coins: wallets[pid] || 0, races: 0, wins: 0, ledger: [], entryFee: 50 }),
-    collectEntries: async (code, pids, fee) => {
-      calls.push(['collectEntries', code, pids.slice(), fee]);
-      const entered = pids.filter((p) => wallets[p] >= fee);
-      return { entered, pot: entered.length * fee };
-    },
-    refundEntry: async (...a) => { log('refundEntry')(...a); return 0; },
-    voidPot: async (...a) => { log('voidPot')(...a); return []; },
-    voidAllPots: async () => 0,
-    settle: async (code, ranked, text) => {
-      calls.push(['settle', code, ranked, text]);
-      const out = {};
-      ranked.forEach((r, i) => { out[r.pid] = { rank: i + 1, payout: i === 0 ? 100 : 0, net: i === 0 ? 50 : -50, ratingBefore: 1000, ratingAfter: 1010 - i * 20, ratingDelta: 10 - i * 20 }; });
-      return out;
-    },
-    recentResults: async () => [],
-  };
-}
-
-const realLoad = Module._load;
-Module._load = function (request, parent, isMain) {
-  if (request === 'dotenv') return { config() {} };
-  if (request === 'express') {
-    const express = () => ({ use() {}, get() {} });
-    express.static = () => () => {};
-    return express;
-  }
-  if (request === 'socket.io') {
-    return { Server: class { to(target) { return { emit: (ev, data) => emits.push({ target, ev, data }) }; } on(ev, fn) { if (ev === 'connection') onConnection = fn; } } };
-  }
-  if (request === 'http') return { createServer: () => ({ listen: (p, cb) => cb && cb() }) };
-  if (request === './accounts') return () => fakeAccounts();
-  return realLoad.apply(this, arguments);
-};
-process.env.PORT = '0';
-process.env.COUNTDOWN_MS = '120';   // short race so the whole flow runs in under a second
-process.env.RACE_MS = '400';
-require(path.join(__dirname, '..', 'server.js'));
-Module._load = realLoad;
-
-let counter = 0;
-function connect() {
-  const id = 'sock' + ++counter;
-  const handlers = {};
-  const socket = {
-    id, data: {}, handlers,
-    on(ev, fn) { handlers[ev] = fn; },
-    join() {}, leave() {},
-    emit(ev, data) { emits.push({ target: id, ev, data }); },
-  };
-  onConnection(socket);
-  const ask = (ev, data) => new Promise((resolve) => handlers[ev](data, resolve));
-  return { socket, ask, fire: (ev, data) => handlers[ev](data) };
-}
-const lastState = (code) => [...emits].reverse().find((e) => e.ev === 'room:state' && e.data.code === code).data;
-const called = (name) => calls.filter((c) => c[0] === name);
+const { sleep, emits, calls, wallets, connect, lastState, called } = require('./harness');
 
 test('casual race: free, no pot, nobody is charged', async () => {
   calls.length = 0; emits.length = 0;
@@ -253,5 +184,77 @@ test('casual: disconnecting forfeits nothing', async () => {
   assert.strictEqual(lane.entered, true);
   assert.strictEqual(lane.forfeited, false);
   a.fire('room:leave'); b.fire('room:leave');
+  await sleep(30);
+});
+
+// ---------- passage difficulty ----------
+const bank = require('../passages');
+const countdownText = () => [...emits].reverse().find((e) => e.ev === 'race:countdown').data.text;
+
+test('the server picks the passage from the room\'s difficulty', async () => {
+  for (const level of ['easy', 'medium', 'hard']) {
+    emits.length = 0;
+    const a = connect();
+    const made = await a.ask('room:create', { name: 'A', pid: 'diff' + level, ranked: false, difficulty: level });
+    assert.strictEqual(lastState(made.code).difficulty, level);
+    a.fire('race:start');
+    await sleep(30);
+    assert.ok(bank.BANK[level].includes(countdownText()), 'a ' + level + ' room gets a ' + level + ' passage');
+    a.fire('room:leave');
+    await sleep(30);
+  }
+});
+
+test('a missing or invalid difficulty becomes medium', async () => {
+  for (const bad of [undefined, 'impossible', 7, null, ['hard'], '__proto__']) {
+    const a = connect();
+    const made = await a.ask('room:create', { name: 'A', pid: 'bad' + String(bad).slice(0, 5), ranked: false, difficulty: bad });
+    assert.strictEqual(lastState(made.code).difficulty, 'medium', 'difficulty ' + JSON.stringify(bad));
+    a.fire('room:leave');
+    await sleep(10);
+  }
+});
+
+test('the host can change the difficulty between races; nobody else can', async () => {
+  emits.length = 0;
+  const a = connect(); const b = connect();
+  const made = await a.ask('room:create', { name: 'A', pid: 'chgA', ranked: false });
+  await b.ask('room:join', { name: 'B', code: made.code, pid: 'chgB' });
+
+  b.fire('room:difficulty', { difficulty: 'hard' });                 // not the host
+  assert.strictEqual(lastState(made.code).difficulty, 'medium');
+
+  a.fire('room:difficulty', { difficulty: 'bogus' });                // not a real difficulty
+  assert.strictEqual(lastState(made.code).difficulty, 'medium');
+
+  a.fire('room:difficulty', { difficulty: 'hard' });                 // the host, a real difficulty
+  assert.strictEqual(lastState(made.code).difficulty, 'hard');
+
+  a.fire('race:start');
+  await sleep(30);
+  assert.ok(bank.BANK.hard.includes(countdownText()));
+
+  a.fire('room:difficulty', { difficulty: 'easy' });                 // a race is on: no changing
+  assert.strictEqual(lastState(made.code).difficulty, 'hard');
+
+  a.fire('room:leave'); b.fire('room:leave');
+  await sleep(30);
+});
+
+test('the same room never gets the same passage twice in a row', async () => {
+  emits.length = 0;
+  const a = connect();
+  const made = await a.ask('room:create', { name: 'A', pid: 'repeatA', ranked: false, difficulty: 'easy' });
+  const seen = [];
+  for (let i = 0; i < 3; i++) {
+    a.fire('race:start');
+    await sleep(30);
+    seen.push(countdownText());
+    await sleep(600);                                                // countdown + the whole race, so the room is "finished"
+    assert.strictEqual(lastState(made.code).status, 'finished');
+  }
+  assert.notStrictEqual(seen[0], seen[1]);
+  assert.notStrictEqual(seen[1], seen[2]);
+  a.fire('room:leave');
   await sleep(30);
 });

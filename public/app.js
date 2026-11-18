@@ -70,6 +70,7 @@ function goHome() {
   history.replaceState(null, '', location.pathname);
   showScreen('home');
   renderRecords();
+  loadStats();
 }
 
 // ---------- home screen ----------
@@ -79,15 +80,51 @@ if (urlRoom) $('code').value = urlRoom.toUpperCase().slice(0, 4);
 
 function onEntered(result) {
   if (!result.ok) return showToast(result.error);
+  showSearching(false);
   localStorage.setItem('name', $('name').value);
   localStorage.setItem('session', result.code);
   history.replaceState(null, '', '?room=' + result.code);
   showScreen('room');
 }
 
+// ---------- quick match ----------
+function showSearching(on) {
+  $('searching').hidden = !on;
+  $('quick').disabled = on;
+  if (on) $('searchText').textContent = 'Searching for opponents...';
+}
+
+function quickMatch() {
+  const mode = document.querySelector('input[name="mode"]:checked');
+  const level = document.querySelector('input[name="difficulty"]:checked');
+  socket.emit('match:join', {
+    name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium',
+  }, function (res) {
+    if (!res || !res.ok) return showToast(res && res.error ? res.error : 'Could not start searching.');
+    showSearching(true);
+  });
+}
+
+function cancelSearch() {
+  socket.emit('match:cancel', {}, function () { showSearching(false); });
+}
+
+function onMatchStatus(data) {
+  if ($('searching').hidden) return;
+  const seconds = Math.round(data.waitedMs / 1000);
+  $('searchText').textContent = 'Searching for opponents... ' + seconds + 's \u00b7 ' + data.searching +
+    (data.searching === 1 ? ' player' : ' players') + ' searching';
+}
+
+// the server found a match and has already put us in the room
+function onMatchFound(data) {
+  onEntered({ ok: true, code: data.code });
+}
+
 function createRoom() {
   const mode = document.querySelector('input[name="mode"]:checked');
-  socket.emit('room:create', { name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked' }, onEntered);
+  const level = document.querySelector('input[name="difficulty"]:checked');
+  socket.emit('room:create', { name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium' }, onEntered);
 }
 
 function joinRoom() {
@@ -115,6 +152,8 @@ function copyLink() {
 
 $('create').addEventListener('click', createRoom);
 $('join').addEventListener('click', joinRoom);
+$('quick').addEventListener('click', quickMatch);
+$('cancelSearch').addEventListener('click', cancelSearch);
 $('name').addEventListener('keydown', onHomeKey);
 $('code').addEventListener('keydown', onHomeKey);
 $('leave').addEventListener('click', leaveRoom);
@@ -181,6 +220,66 @@ function clearRecords() {
 
 $('clearRecords').addEventListener('click', clearRecords);
 renderRecords();
+
+// ---------- stats and leaderboard (kept on the server) ----------
+function loadStats() {
+  socket.emit('stats:get', { pid: pid }, function (res) {
+    if (res && res.ok) renderStats(res.stats, res.leaderboard);
+  });
+}
+
+// accuracy over the last races as a small line chart, oldest on the left
+function trendSvg(trend) {
+  if (!trend.length) return '<p class="muted">Finish a race to see your accuracy trend.</p>';
+  const w = 320, h = 110, padL = 34, padR = 10, padT = 12, padB = 18;
+  const values = trend.map(function (t) { return Number(t.accuracy); });
+  const hi = 100;
+  let lo = Math.min.apply(null, values);
+  if (hi - lo < 5) lo = hi - 5; // never zoom in so far that a 1% wobble looks like a crash
+  const x = function (i) { return trend.length === 1 ? (padL + w - padR) / 2 : padL + (i * (w - padL - padR)) / (trend.length - 1); };
+  const y = function (v) { return padT + ((hi - v) * (h - padT - padB)) / (hi - lo); };
+  const points = values.map(function (v, i) { return x(i).toFixed(1) + ',' + y(v).toFixed(1); });
+  const label = 'Accuracy over your last ' + trend.length + (trend.length === 1 ? ' race: ' : ' races: from ') +
+    (trend.length === 1 ? values[0] + '%' : values[0] + '% to ' + values[values.length - 1] + '%');
+  let svg = '<svg class="trend" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(label) + '">' +
+    '<line class="axis" x1="' + padL + '" y1="' + y(hi) + '" x2="' + (w - padR) + '" y2="' + y(hi) + '"/>' +
+    '<line class="axis" x1="' + padL + '" y1="' + y(lo) + '" x2="' + (w - padR) + '" y2="' + y(lo) + '"/>' +
+    '<text x="' + (padL - 6) + '" y="' + (y(hi) + 4) + '" text-anchor="end">' + hi + '%</text>' +
+    '<text x="' + (padL - 6) + '" y="' + (y(lo) + 4) + '" text-anchor="end">' + Math.round(lo) + '%</text>';
+  if (trend.length > 1) svg += '<polyline class="line" points="' + points.join(' ') + '"/>';
+  values.forEach(function (v, i) { svg += '<circle class="dot" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3.5"/>'; });
+  return svg + '</svg>';
+}
+
+function renderStats(stats, board) {
+  const hasStats = stats && (stats.races > 0 || stats.flaggedRaces > 0);
+  $('myStats').hidden = !hasStats;
+  if (hasStats) {
+    $('statsSummary').innerHTML = '<div><b>' + stats.bestWpm + '</b><span>best WPM</span></div>' +
+      '<div><b>' + stats.avgWpm + '</b><span>average WPM</span></div>' +
+      '<div><b>' + stats.races + '</b><span>races counted</span></div>';
+    $('trendChart').innerHTML = trendSvg(stats.trend);
+    let missed = '';
+    stats.mostMissed.forEach(function (m) {
+      missed += '<li><kbd>' + (m.ch === ' ' ? 'space' : esc(m.ch)) + '</kbd><small>\u00d7' + m.misses + '</small></li>';
+    });
+    $('missedList').innerHTML = missed || '<li class="muted">No mistakes yet. Nice.</li>';
+    $('statsNote').hidden = !stats.flaggedRaces;
+    if (stats.flaggedRaces) {
+      $('statsNote').textContent = stats.flaggedRaces + (stats.flaggedRaces === 1 ? ' race was' : ' races were') +
+        ' not counted because anti-cheat flagged unusual typing.';
+    }
+  }
+
+  const rows = board || [];
+  $('board').hidden = rows.length === 0;
+  let html = '';
+  rows.forEach(function (r, i) {
+    html += '<tr' + (r.isYou ? ' class="you"' : '') + '><td>' + (i + 1) + '</td><td>' + esc(r.name) + (r.isYou ? ' (you)' : '') +
+      '</td><td>' + r.rating + '</td><td>' + r.bestWpm + '</td><td>' + r.wins + ' / ' + r.races + '</td></tr>';
+  });
+  $('boardTable').querySelector('tbody').innerHTML = html;
+}
 
 // ---------- wallet: rating, coins and transactions ----------
 const ledgerLabels = { grant: 'Welcome coins', entry: 'Entry fee', reward: 'Prize', refund: 'Refund' };
@@ -250,9 +349,11 @@ function onDisconnect() {
 
 // on every (re)connect, take our seat back if we were in a room
 function onConnect() {
+  showSearching(false); // a dropped connection also dropped our place in the queue
   socket.emit('account:get', { pid: pid }, function (res) {
     if (res && res.ok) setAccount(res.account);
   });
+  loadStats();
   const code = localStorage.getItem('session');
   if (!code) return;
   if (urlRoom && urlRoom.toUpperCase().slice(0, 4) !== code) return; // opened an invite to another room
@@ -290,6 +391,8 @@ socket.on('race:resync', onResync);
 socket.on('account:state', setAccount);
 socket.on('race:result', onResult);
 socket.on('race:notice', function (data) { showToast(data.message); });
+socket.on('match:status', onMatchStatus);
+socket.on('match:found', onMatchFound);
 socket.on('disconnect', onDisconnect);
 
 // ---------- drawing the room (runs on every server update) ----------
@@ -306,7 +409,7 @@ function render() {
   };
 
   $('roomCode').textContent = room.code;
-  $('status').textContent = labels[room.status] + (room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual');
+  $('status').textContent = labels[room.status] + (room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual') + ' \u00b7 ' + capital(room.difficulty);
   $('stats').hidden = room.status === 'lobby';
   $('passage').hidden = room.status === 'lobby' || !state.text;
   $('hint').hidden = room.status !== 'racing';
@@ -355,6 +458,22 @@ function renderLanes(room) {
   $('lanes').innerHTML = html;
 }
 
+function capital(word) {
+  word = String(word || 'medium');
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+// the host picks how hard the next passage is; everyone else just sees it
+function difficultyHtml(room, isHost) {
+  if (!isHost) return '<p class="muted">Difficulty: ' + capital(room.difficulty) + '</p>';
+  let html = '<div class="difficulty" role="group" aria-label="Passage difficulty"><span class="muted">Difficulty</span>';
+  ['easy', 'medium', 'hard'].forEach(function (level) {
+    html += '<button type="button" class="diff' + (room.difficulty === level ? ' on' : '') + '" data-difficulty="' + level +
+      '" aria-pressed="' + (room.difficulty === level) + '">' + capital(level) + '</button>';
+  });
+  return html + '</div>';
+}
+
 function renderPanel(room, me, rank) {
   const isHost = room.hostId === socket.id;
   const winner = room.players[0];
@@ -365,6 +484,7 @@ function renderPanel(room, me, rank) {
       '</strong> or click it above to copy an invite link. ' + (room.ranked
         ? 'Ranked: entry is ' + room.fee + ' coins per racer, and your rating changes. Disconnecting or leaving once the race has started forfeits your entry fee. Starting alone just returns your own fee.'
         : 'Casual: free to play. No coins are spent or won and ratings do not change.') + '</p>';
+    html += difficultyHtml(room, isHost);
     if (isHost) html += '<button id="start" class="btn" type="button">Start race</button>';
     else html += '<p>Waiting for the host to start.</p>';
   } else if (room.status === 'countdown') {
@@ -384,12 +504,18 @@ function renderPanel(room, me, rank) {
     if (winner.finished && winner.id !== me.id) html += ' ' + esc(winner.name) + ' won at ' + winner.wpm + ' WPM.';
     html += '</p>' + resultHtml(me);
     if (!room.ranked) html += '<p class="muted">Casual race: no coins or rating changed.</p>';
+    html += difficultyHtml(room, isHost);
     if (isHost) html += '<button id="start" class="btn" type="button">Race again</button>';
     else html += '<p>Waiting for the host to start another race.</p>';
   }
 
   $('panel').innerHTML = html;
   if ($('start')) $('start').addEventListener('click', startRace);
+  document.querySelectorAll('#panel [data-difficulty]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      socket.emit('room:difficulty', { difficulty: button.getAttribute('data-difficulty') });
+    });
+  });
 }
 
 // what this race cost and paid, plus the rating change

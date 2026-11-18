@@ -25,6 +25,8 @@ test('Supabase transactions', { skip: enabled ? false : 'set TEST_SUPABASE=1 to 
     for (const c of codes) await db.from('pots').delete().eq('code', c);
     for (const c of codes) await db.from('race_results').delete().eq('room', c);  // players rows go with them
     for (const p of pids) {
+      await db.from('cheat_flags').delete().eq('pid', p);
+      await db.from('race_stats').delete().eq('pid', p);
       await db.from('ledger').delete().eq('pid', p);
       await db.from('accounts').delete().eq('pid', p);
     }
@@ -143,6 +145,63 @@ test('Supabase transactions', { skip: enabled ? false : 'set TEST_SUPABASE=1 to 
     // only these four kinds of entry exist, and none of them is money in or out
     const ok = await db.from('ledger').select('type').eq('pid', a);
     assert.ok(ok.data.every((r) => ['grant', 'entry', 'refund', 'reward'].includes(r.type)));
+  });
+
+  await t.test('race stats: best/average WPM, accuracy trend and most-missed letters skip flagged races', async () => {
+    const a = await player('statsA');
+    const code = codeOf(11); codes.push(code);
+    const race = (wpm, accuracy, missed, flags) => ({ pid: a, wpm, accuracy, progress: 100, finished: true, missed, flags: flags || [] });
+    await db.rpc('record_race_stats', { p_code: code, p_ranked: false, p_difficulty: 'easy', p_players: [race(60, 90, { e: 2, ' ': 1 })] });
+    await db.rpc('record_race_stats', { p_code: code, p_ranked: true, p_difficulty: 'hard', p_players: [race(80, 95, { e: 1, t: 3 })] });
+    const cheated = await db.rpc('record_race_stats', { p_code: code, p_ranked: false, p_difficulty: 'easy',
+      p_players: [race(300, 100, { z: 99 }, [{ reason: 'speed', count: 1, detail: '300 WPM after 40 letters' }])] });
+    assert.strictEqual(cheated.data, 1);
+
+    const stats = (await db.rpc('player_stats', { p_pid: a })).data;
+    assert.strictEqual(stats.races, 2);
+    assert.strictEqual(stats.flaggedRaces, 1);
+    assert.strictEqual(stats.bestWpm, 80);                      // the 300 WPM race does not count
+    assert.strictEqual(stats.avgWpm, 70);
+    assert.deepStrictEqual(stats.trend.map((t) => Number(t.accuracy)), [90, 95]);   // oldest first
+    assert.deepStrictEqual(stats.mostMissed.slice(0, 2).map((m) => [m.ch, m.misses]), [['e', 3], ['t', 3]]);
+    assert.ok(!stats.mostMissed.some((m) => m.ch === 'z'), 'letters from a flagged race are ignored');
+
+    const flags = await db.from('cheat_flags').select('reason, times, detail').eq('pid', a);
+    assert.deepStrictEqual(flags.data.map((f) => f.reason), ['speed']);
+  });
+
+  await t.test('a bad reason is refused and the whole save rolls back', async () => {
+    const a = await player('badReason');
+    const code = codeOf(12); codes.push(code);
+    const res = await db.rpc('record_race_stats', { p_code: code, p_ranked: false, p_difficulty: 'easy', p_players: [
+      { pid: a, wpm: 50, accuracy: 100, progress: 100, finished: true, missed: {}, flags: [] },
+      { pid: a, wpm: 50, accuracy: 100, progress: 100, finished: true, missed: {}, flags: [{ reason: 'made-up', count: 1 }] },
+    ] });
+    assert.ok(res.error, 'an unknown flag reason must be rejected');
+    const rows = await db.from('race_stats').select('id').eq('room', code);
+    assert.strictEqual(rows.data.length, 0, 'the first racer was not saved either');
+  });
+
+  await t.test('leaderboard: ranked by rating, marks you, hides pids, hides repeat cheats, uses clean WPM', async () => {
+    const [a, b] = [await player('boardTop'), await player('boardCheat')];
+    await db.from('accounts').update({ races: 1, rating: 9000, name: 'Top' }).eq('pid', a);
+    await db.from('accounts').update({ races: 1, rating: 9500, name: 'Cheat' }).eq('pid', b);
+    const code = codeOf(13); codes.push(code);
+    const ok = { wpm: 70, accuracy: 97, progress: 100, finished: true, missed: {} };
+    await db.rpc('record_race_stats', { p_code: code, p_ranked: true, p_difficulty: 'easy', p_players: [{ pid: a, ...ok }, { pid: a, ...ok, wpm: 400, flags: [{ reason: 'speed', count: 1 }] }] });
+    for (let i = 0; i < 3; i++) {
+      await db.rpc('record_race_stats', { p_code: code, p_ranked: true, p_difficulty: 'easy', p_players: [{ pid: b, ...ok, flags: [{ reason: 'paste', count: 1 }] }] });
+    }
+
+    const board = (await db.rpc('leaderboard', { p_limit: 100, p_pid: a })).data;
+    const me = board.find((r) => r.isYou);
+    assert.ok(me, 'the asking player is marked');
+    assert.strictEqual(me.name, 'Top');
+    assert.strictEqual(me.bestWpm, 70, 'the flagged 400 WPM race does not count');
+    assert.ok(!board.some((r) => r.name === 'Cheat'), 'a player with 3 flagged races is hidden');
+    assert.ok(board.every((r) => !('pid' in r)), 'no pid is ever exposed');
+    const ratings = board.map((r) => r.rating);
+    assert.deepStrictEqual(ratings, [...ratings].sort((x, y) => y - x), 'sorted by rating, highest first');
   });
 
   await t.test('settle rolls back if a racer never paid in', async () => {

@@ -29,11 +29,27 @@
           <label><input type="radio" name="mode" value="casual"> <b>Casual</b> <small>free, no coins or rating</small></label>
         </fieldset>
 
+        <fieldset class="mode">
+          <legend>Passage difficulty (for a room you create)</legend>
+          <label><input type="radio" name="difficulty" value="easy"> <b>Easy</b> <small>short, everyday words</small></label>
+          <label><input type="radio" name="difficulty" value="medium" checked> <b>Medium</b> <small>a full paragraph</small></label>
+          <label><input type="radio" name="difficulty" value="hard"> <b>Hard</b> <small>long words, numbers and punctuation</small></label>
+        </fieldset>
+
         <div class="actions">
           <button id="create" class="btn" type="button">Create room</button>
           <span class="or">or</span>
           <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Code" aria-label="Room code">
           <button id="join" class="btn secondary" type="button">Join room</button>
+        </div>
+
+        <div class="quick">
+          <button id="quick" class="btn" type="button">Quick match</button>
+          <span class="muted">Finds opponents with a similar rating, using the race type and difficulty above.</span>
+        </div>
+        <div id="searching" class="searching" role="status" aria-live="polite" hidden>
+          <span id="searchText">Searching for opponents...</span>
+          <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
         </div>
       </div>
 
@@ -59,6 +75,34 @@
         </div>
         <div id="recordBest" class="record-stats"></div>
         <ol id="recordList" class="record-list"></ol>
+      </section>
+
+      <!-- Stats and leaderboard (kept on the server) -->
+      <section id="myStats" class="statcard" hidden>
+        <h2>Your stats</h2>
+        <div id="statsSummary" class="record-stats"></div>
+        <div class="stats-grid">
+          <div>
+            <h3>Accuracy over your last races</h3>
+            <div id="trendChart"></div>
+          </div>
+          <div>
+            <h3>Most-missed characters</h3>
+            <ol id="missedList" class="missed"></ol>
+          </div>
+        </div>
+        <p id="statsNote" class="wallet-note" hidden></p>
+      </section>
+
+      <section id="board" class="statcard" hidden>
+        <h2>Leaderboard</h2>
+        <p class="wallet-note">Ranked players by rating. Races that anti-cheat flagged don't count.</p>
+        <div class="table-wrap">
+          <table id="boardTable">
+            <thead><tr><th>#</th><th>Player</th><th>Rating</th><th>Best WPM</th><th>Wins / races</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </section>
     </section>
 
