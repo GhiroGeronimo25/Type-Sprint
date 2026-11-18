@@ -183,6 +183,7 @@ function hideToast() {
 
 function showScreen(name) {
   $('auth').hidden = name !== 'auth';
+  $('userBar').hidden = name !== 'home';
   $('home').hidden = name !== 'home';
   $('room').hidden = name !== 'room';
 }
@@ -432,8 +433,14 @@ function renderWallet() {
       '<span class="bal">' + t.balance + ' left</span><span class="when">' + when + '</span></li>';
   }
   $('ledger').innerHTML = html;
-  $('walletChip').hidden = false;
   $('walletChip').textContent = a.coins + ' coins \u00b7 rating ' + a.rating;
+  refreshChip();
+}
+
+// coins and rating only matter in ranked races, so a casual room doesn't show them
+function refreshChip() {
+  const casual = state.room && state.room.ranked === false;
+  $('walletChip').hidden = !state.account || !!casual;
 }
 
 function onResult(result) {
@@ -528,6 +535,7 @@ function render() {
   const room = state.room;
   const index = myIndex(room);
   if (index < 0) return;
+  refreshChip();
   const me = room.players[index];
   const labels = {
     lobby: room.players.length + ' in the room',
@@ -579,7 +587,7 @@ function renderLanes(room) {
     }
     html += '<div class="' + cls + '">' +
       '<span class="rank">' + (i + 1) + '</span>' +
-      '<span class="name">' + name + ' <small class="rating">' + p.rating + '</small></span>' +
+      '<span class="name">' + name + (room.ranked ? ' <small class="rating">' + p.rating + '</small>' : '') + '</span>' +
       '<div class="track"><div class="fill" style="width:' + (p.progress * 100).toFixed(1) + '%"></div></div>' +
       '<span class="speed"><b>' + p.wpm + '</b> wpm</span></div>';
   }
