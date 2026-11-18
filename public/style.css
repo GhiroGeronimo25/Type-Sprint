@@ -551,3 +551,22 @@ input[type="email"]:focus, input[type="password"]:focus { outline: none; backgro
 /* logged-in bar: sits above the home grid, so it never shifts the layout */
 .user-bar { justify-content: flex-start; margin: -1.5rem 0 1rem; color: var(--white); font-weight: 600; }
 .user-bar b { color: var(--signal); }
+
+/* ---------- live lobby ---------- */
+.lobby { background: var(--white); color: var(--ink); border: var(--line); border-radius: var(--radius); box-shadow: 8px 8px 0 var(--ink); padding: 1.3rem 1.6rem; margin-bottom: 2rem; }
+.lobby-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.lobby-head h2 { margin: 0; }
+.live { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 800; font-size: 0.85rem; color: var(--muted); }
+.live i { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px rgba(46, 230, 166, 0.3); }
+.lobby-list { list-style: none; margin: 0.8rem 0 0; padding: 0; }
+.lobby-row { display: flex; align-items: center; gap: 1rem; padding: 0.7rem 0; border-top: 1px dashed #c9cfe6; }
+.lobby-code { font-weight: 800; letter-spacing: 0.12em; background: var(--ink); color: var(--signal); padding: 0.3rem 0.6rem; border-radius: 8px; }
+.lobby-host { flex: 1; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.lobby-host small { display: block; color: var(--muted); font-weight: 600; }
+.lobby-seats { font-weight: 800; }
+.lobby-row .btn { padding: 0.5rem 1.1rem; }
+.lobby .wallet-note { margin: 0.8rem 0 0; }
+@media (min-width: 1000px) {
+  #home .lobby { grid-column: 1 / -1; grid-row: 4; margin: 2rem 0 0; }
+  #home .records { grid-row: 5; }
+}

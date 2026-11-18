@@ -274,7 +274,42 @@ function handleInput(room, p, input) {
 }
 
 // ---------- sending the leaderboard ----------
+// ---------- live lobby: the open rooms anybody can join ----------
+// Sockets on the home screen sit in the 'lobby' channel and get the list whenever it changes.
+// The list never holds a pid: only the room code, the host's name and a few settings.
+const LOBBY_MAX_ROOMS = 20;
+let lobbyTimer = null;
+
+function openRooms() {
+  const list = [];
+  Object.keys(rooms).forEach(function (code) {
+    const room = rooms[code];
+    if (room.status !== 'lobby' || room.starting || room.listed === false) return; // already racing, or a quick-match room
+    if (room.players.length >= MAX_PLAYERS) return;
+    const here = room.players.filter(function (p) { return !p.away; });
+    if (here.length === 0) return;
+    const host = findById(room, room.hostId) || here[0];
+    list.push({
+      code: room.code, host: host.name, ranked: room.ranked, difficulty: room.difficulty,
+      players: room.players.length, max: MAX_PLAYERS, fee: ENTRY_FEE, createdAt: room.createdAt || 0,
+    });
+  });
+  list.sort(function (a, b) { return b.createdAt - a.createdAt; });
+  return list.slice(0, LOBBY_MAX_ROOMS).map(function (r) { delete r.createdAt; return r; });
+}
+
+// many room updates in a row (typing, joins) become one lobby message
+function scheduleLobby() {
+  if (lobbyTimer) return;
+  lobbyTimer = setTimeout(function () {
+    lobbyTimer = null;
+    io.to('lobby').emit('lobby:rooms', { rooms: openRooms() });
+  }, 250);
+  if (lobbyTimer.unref) lobbyTimer.unref();
+}
+
 function broadcast(room) {
+  scheduleLobby();
   room.players.sort(byRank); // list order = rank
   const players = [];
   for (let i = 0; i < room.players.length; i++) {
@@ -476,6 +511,7 @@ function cleanName(rawName) {
 
 function joinRoom(socket, room, rawName, pid) {
   cancelSearch(socket); // joining a room ends any quick-match search
+  socket.leave('lobby'); // a player in a room no longer needs the open-rooms list
   const base = cleanName(rawName);
   let name = base;
   let n = 1;
@@ -509,6 +545,7 @@ function rebind(socket, room, p) {
   const oldId = p.id;
   p.id = socket.id;
   if (room.hostId === oldId) room.hostId = p.id;
+  socket.leave('lobby');
   socket.join(room.code);
   socket.data.code = room.code;
   if (p.forfeited) {
@@ -533,6 +570,7 @@ function removePlayer(room, p) {
     clearInterval(room.tickTimer);
     clearTimeout(room.endTimer);
     delete rooms[room.code];
+    scheduleLobby();
     if (room.ranked && (room.status === 'countdown' || room.status === 'racing')) { // everyone left mid-race: return what is still in the pot
       accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
     }
@@ -590,7 +628,7 @@ function startMatch(group) {
   const first = group[0];
   const room = {
     code: randomCode(), hostId: first.socket.id, ranked: first.ranked, difficulty: first.difficulty,
-    status: 'lobby', text: '', startAt: 0, players: [],
+    status: 'lobby', text: '', startAt: 0, players: [], listed: false, createdAt: Date.now(), // quick-match rooms start at once: not listed
   };
   rooms[room.code] = room;
   group.forEach(function (t) {
@@ -625,7 +663,7 @@ function onConnection(socket) {
     if (socket.data.code) return;
     const ranked = (data || {}).ranked !== false; // ranked unless the host picked casual
     const difficulty = passages.isDifficulty((data || {}).difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY; // anything else becomes the default
-    const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, status: 'lobby', text: '', startAt: 0, players: [] };
+    const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now() };
     rooms[room.code] = room;
     const player = joinRoom(socket, room, socket.data.name, socket.data.pid);
     try {
@@ -779,6 +817,13 @@ function onConnection(socket) {
     runMatchmaking(); // someone may already be waiting
   }
   socket.on('account:get', onAccount);
+  // the home screen asks to watch the open rooms; it gets the list now and again on every change
+  socket.on('lobby:watch', function (data, ack) {
+    if (socket.data.code) return typeof ack === 'function' && ack({ ok: false, rooms: [] });
+    socket.join('lobby');
+    if (typeof ack === 'function') ack({ ok: true, rooms: openRooms() });
+  });
+  socket.on('lobby:unwatch', function () { socket.leave('lobby'); });
   // the host picks how hard the next passage will be (only between races, and only a real difficulty)
   socket.on('room:difficulty', function (data) {
     const room = rooms[socket.data.code];

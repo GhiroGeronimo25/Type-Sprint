@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <main>
@@ -90,6 +90,16 @@
         <li>The host starts the race. Everyone types the same passage.</li>
       </ol>
 
+      <!-- Live lobby: rooms anyone can join right now -->
+      <section id="lobby" class="lobby">
+        <div class="lobby-head">
+          <h2>Open rooms</h2>
+          <span class="live"><i></i>Live</span>
+        </div>
+        <ul id="lobbyList" class="lobby-list"></ul>
+        <p id="lobbyEmpty" class="wallet-note">No open rooms right now. Create one and others can join it from here.</p>
+      </section>
+
       <!-- Saved races (from this browser) -->
       <section id="records" class="records" hidden>
         <div class="records-head">
@@ -163,6 +173,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
