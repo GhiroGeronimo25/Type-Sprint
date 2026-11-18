@@ -224,6 +224,22 @@ app.get('/api/leaderboard', requireLogin, function (req, res) {
   });
 });
 
+// ---------- REST API: passage bank (public, read-only) ----------
+// The bank is described, never handed out: no endpoint returns a passage's full text, so nobody can read
+// the text before a race. The server alone picks the passage for each race.
+// GET /api/passages -> { default, difficulties: [{ difficulty, description, count, avgWords, avgCharacters, minCharacters, maxCharacters }] }
+app.get('/api/passages', function (req, res) {
+  res.json({ default: passages.DEFAULT_DIFFICULTY, difficulties: passages.summary() });
+});
+
+// GET /api/passages/:difficulty -> { difficulty, items: [{ id, words, characters, preview }] }   (easy, medium or hard)
+app.get('/api/passages/:difficulty', function (req, res) {
+  const level = String((req.params || {}).difficulty || '').toLowerCase();
+  const items = passages.describe(level);
+  if (!items) return res.status(404).json({ error: 'Unknown difficulty. Use easy, medium or hard.' });
+  res.json({ difficulty: level, items: items });
+});
+
 const rooms = {}; // rooms['ABCD'] = { code, hostId, status, text, startAt, players: [] }
 
 // ---------- helpers ----------

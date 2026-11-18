@@ -95,4 +95,37 @@ function pick(difficulty, previous) {
   return options[Math.floor(Math.random() * options.length)];
 }
 
-module.exports = { BANK: BANK, DIFFICULTIES: DIFFICULTIES, DEFAULT_DIFFICULTY: DEFAULT_DIFFICULTY, validate: validate, isDifficulty: isDifficulty, pick: pick };
+// ---------- read-only description of the bank, for the REST API ----------
+// The API never returns a passage's full text: players must not be able to read (or memorise) the text
+// before a race. It describes the bank instead: sizes, and a short preview of how each passage starts.
+const DESCRIPTIONS = {
+  easy: 'Short, everyday words with just commas and full stops.',
+  medium: 'A full paragraph of ordinary prose.',
+  hard: 'Longer words, digits, quotes, brackets, semicolons and hyphens.',
+};
+const PREVIEW_WORDS = 5;
+
+function wordCount(text) { return text.split(' ').length; }
+
+function summary() {
+  return DIFFICULTIES.map(function (level) {
+    const list = BANK[level];
+    const lengths = list.map(function (t) { return t.length; });
+    const words = list.map(wordCount);
+    const avg = function (a) { return Math.round(a.reduce(function (x, y) { return x + y; }, 0) / a.length); };
+    return {
+      difficulty: level, description: DESCRIPTIONS[level], count: list.length,
+      avgWords: avg(words), avgCharacters: avg(lengths), minCharacters: Math.min.apply(null, lengths), maxCharacters: Math.max.apply(null, lengths),
+    };
+  });
+}
+
+// the passages of one difficulty, as { id, words, characters, preview } (id counts from 1)
+function describe(level) {
+  if (!isDifficulty(level)) return null;
+  return BANK[level].map(function (text, i) {
+    return { id: i + 1, words: wordCount(text), characters: text.length, preview: text.split(' ').slice(0, PREVIEW_WORDS).join(' ') + '\u2026' };
+  });
+}
+
+module.exports = { summary: summary, describe: describe, BANK: BANK, DIFFICULTIES: DIFFICULTIES, DEFAULT_DIFFICULTY: DEFAULT_DIFFICULTY, validate: validate, isDifficulty: isDifficulty, pick: pick };
