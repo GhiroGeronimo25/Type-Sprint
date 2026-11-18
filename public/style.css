@@ -570,3 +570,11 @@ input[type="email"]:focus, input[type="password"]:focus { outline: none; backgro
   #home .lobby { grid-column: 1 / -1; grid-row: 4; margin: 2rem 0 0; }
   #home .records { grid-row: 5; }
 }
+
+/* ---------- transaction history ---------- */
+.wallet-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1rem; margin: 1rem 0 0.4rem; }
+.wallet-head h3 { margin: 0; font-size: 1.15rem; font-weight: 800; }
+.filters { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.chipbtn { font: inherit; font-weight: 700; font-size: 0.85rem; padding: 0.3rem 0.8rem; border: 2px solid var(--ink); border-radius: 999px; background: var(--white); color: var(--ink); cursor: pointer; }
+.chipbtn.active { background: var(--ink); color: var(--signal); }
+#ledgerMore { margin-top: 0.8rem; }

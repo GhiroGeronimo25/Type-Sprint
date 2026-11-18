@@ -9,6 +9,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const emits = [];                       // every message the server sent: { target, ev, data }
 const calls = [];                       // every accounts call: [name, ...args]
 const wallets = {};                     // pid -> coins, for the fake accounts
+const routes = {};                      // GET routes the server registered: path -> [middleware..., handler]
 let onConnection;
 let authMiddleware;
 
@@ -18,6 +19,7 @@ function fakeAccounts() {
     ENTRY_FEE: 50,
     // test tokens look like "token:<userId>"; anything else is a forged or missing login
     verifyToken: async (token) => (/^token:[A-Za-z0-9-]+$/.test(String(token)) ? { id: String(token).slice(6), email: '', username: 'tester' } : null),
+    ledgerPage: async (pid, offset, limit, type) => { calls.push(['ledgerPage', pid, offset, limit, type]); return { items: [{ id: 1, at: new Date().toISOString(), type: type || 'grant', amount: 500, balance: 500, room: '' }], hasMore: offset === 0 }; },
     usernameAvailable: async (name) => name !== 'taken',
     join: async (pid) => { calls.push(['join', pid]); if (!(pid in wallets)) wallets[pid] = 500; return { rating: 1000, coins: wallets[pid], races: 0, wins: 0, ledger: [], entryFee: 50 }; },
     view: async (pid) => ({ rating: 1000, coins: wallets[pid] || 0, races: 0, wins: 0, ledger: [], entryFee: 50 }),
@@ -46,7 +48,7 @@ const realLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === 'dotenv') return { config() {} };
   if (request === 'express') {
-    const express = () => ({ use() {}, get() {} });
+    const express = () => ({ use() {}, get(path, ...handlers) { routes[path] = handlers; } });
     express.static = () => () => {};
     return express;
   }
@@ -86,7 +88,19 @@ const lastState = (code) => [...emits].reverse().find((e) => e.ev === 'room:stat
 const called = (name) => calls.filter((c) => c[0] === name);
 
 
-module.exports = { runAuth: (token) => new Promise((resolve) => {
+// calls a GET route like Express would: { token, query } -> { status, body }
+function apiGet(path, opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    const req = { headers: opts.token ? { authorization: 'Bearer ' + opts.token } : {}, query: opts.query || {} };
+    const res = { code: 200, status(c) { this.code = c; return this; }, json(body) { resolve({ status: this.code, body }); } };
+    const chain = routes[path].slice();
+    const next = () => { const fn = chain.shift(); if (fn) fn(req, res, next); };
+    next();
+  });
+}
+
+module.exports = { apiGet, runAuth: (token) => new Promise((resolve) => {
   const socket = { handshake: { auth: { token } }, data: {} };
   authMiddleware(socket, (err) => resolve({ err, socket }));
 }), sleep, emits, calls, wallets, connect, lastState, called };

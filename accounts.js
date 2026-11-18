@@ -121,6 +121,16 @@ function createAccounts(url, serviceKey) {
     return call('record_race_stats', { p_code: code, p_ranked: ranked, p_difficulty: difficulty, p_players: players });
   }
 
+  // One page of a player's coin history, newest first. type (optional): grant, entry, refund or reward.
+  // Resolves to { items: [{ id, at, type, amount, balance, room }], hasMore }
+  async function ledgerPage(pid, offset, limit, type) {
+    let q = db.from('ledger').select('id, at, type, amount, balance, room').eq('pid', pid).order('id', { ascending: false });
+    if (type) q = q.eq('type', type);
+    const res = await q.range(offset, offset + limit); // one extra row tells us whether there is more
+    if (res.error) throw new Error('ledger query failed: ' + res.error.message);
+    return { items: res.data.slice(0, limit), hasMore: res.data.length > limit };
+  }
+
   // best and average WPM, accuracy trend (last 20 races, oldest first) and the 5 most-missed characters
   async function playerStats(pid) {
     return call('player_stats', { p_pid: pid });
@@ -132,7 +142,7 @@ function createAccounts(url, serviceKey) {
   }
 
   return {
-    verifyToken: verifyToken, usernameAvailable: usernameAvailable, join: join, view: view,
+    verifyToken: verifyToken, ledgerPage: ledgerPage, usernameAvailable: usernameAvailable, join: join, view: view,
     recordRaceStats: recordRaceStats, playerStats: playerStats, leaderboard: leaderboard,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
     settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,

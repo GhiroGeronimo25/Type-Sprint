@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
   <main>
@@ -81,7 +81,18 @@
         <h2>Your wallet</h2>
         <div id="walletStats" class="record-stats"></div>
         <p class="wallet-note">Ranked races cost <b id="feeNote">50</b> coins to enter. The prize pool is split among the racers who finish highest, and a racer who disconnects forfeits their entry fee. Coins are virtual only: they can't be bought with real money or cashed out.</p>
+        <div class="wallet-head">
+          <h3>Transaction history</h3>
+          <div id="ledgerFilters" class="filters" role="group" aria-label="Filter transactions">
+            <button type="button" class="chipbtn active" data-type="">All</button>
+            <button type="button" class="chipbtn" data-type="reward">Prizes</button>
+            <button type="button" class="chipbtn" data-type="entry">Entry fees</button>
+            <button type="button" class="chipbtn" data-type="refund">Refunds</button>
+          </div>
+        </div>
         <ol id="ledger" class="ledger"></ol>
+        <p id="ledgerEmpty" class="wallet-note" hidden>No transactions here yet.</p>
+        <button id="ledgerMore" class="btn ghost" type="button" hidden>Show more</button>
       </section>
 
       <ol class="steps">
@@ -173,6 +184,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

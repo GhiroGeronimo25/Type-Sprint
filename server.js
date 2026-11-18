@@ -120,6 +120,58 @@ app.get('/api/results', function (req, res) {
   });
 });
 
+// ---------- REST API: wallet and transaction history ----------
+// Send the Supabase access token as:  Authorization: Bearer <token>
+// The player is always the logged-in user; there is no way to ask for somebody else's wallet.
+const apiLastCall = {}; // user id -> time of the last call (a simple rate limit)
+
+function requireLogin(req, res, next) {
+  const match = /^Bearer (.+)$/.exec(String((req.headers || {}).authorization || ''));
+  if (!match) return res.status(401).json({ error: 'Log in first (missing Bearer token).' });
+  accounts.verifyToken(match[1]).then(function (user) {
+    if (!user) return res.status(401).json({ error: 'Your login is invalid or expired.' });
+    const now = Date.now();
+    if (apiLastCall[user.id] && now - apiLastCall[user.id] < 200) return res.status(429).json({ error: 'Too many requests.' });
+    apiLastCall[user.id] = now;
+    req.user = user;
+    next();
+  }).catch(function (e) {
+    console.error('Login check failed:', e.message);
+    res.status(401).json({ error: 'Your login is invalid or expired.' });
+  });
+}
+setInterval(function () { // forget old entries so the table cannot grow forever
+  const cutoff = Date.now() - 60000;
+  Object.keys(apiLastCall).forEach(function (id) { if (apiLastCall[id] < cutoff) delete apiLastCall[id]; });
+}, 60000).unref();
+
+// GET /api/wallet -> { coins, rating, races, wins, entryFee, ledger: [latest 10] }
+app.get('/api/wallet', requireLogin, function (req, res) {
+  accounts.view(req.user.id).then(function (view) {
+    if (!view) return res.status(404).json({ error: 'No game account yet. Join a room first.' });
+    res.json(view);
+  }).catch(function (e) {
+    console.error('Could not load wallet:', e.message);
+    res.status(500).json({ error: 'Could not load your wallet.' });
+  });
+});
+
+// GET /api/wallet/transactions?offset=0&limit=20&type=reward
+//   type (optional): grant, entry, refund or reward.  limit: 1-50 (default 20).
+//   -> { items: [{ id, at, type, amount, balance, room }], hasMore, offset, limit }
+app.get('/api/wallet/transactions', requireLogin, function (req, res) {
+  const q = req.query || {};
+  const offset = Math.min(Math.max(parseInt(q.offset, 10) || 0, 0), 10000);
+  const limit = Math.min(Math.max(parseInt(q.limit, 10) || 20, 1), 50);
+  const type = ['grant', 'entry', 'refund', 'reward'].indexOf(q.type) >= 0 ? q.type : '';
+  accounts.ledgerPage(req.user.id, offset, limit, type).then(function (page) {
+    res.json({ items: page.items, hasMore: page.hasMore, offset: offset, limit: limit });
+  }).catch(function (e) {
+    console.error('Could not load transactions:', e.message);
+    res.status(500).json({ error: 'Could not load your transactions.' });
+  });
+});
+
 const rooms = {}; // rooms['ABCD'] = { code, hostId, status, text, startAt, players: [] }
 
 // ---------- helpers ----------
