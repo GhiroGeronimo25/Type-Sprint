@@ -1002,14 +1002,16 @@ body { padding-top: var(--nav-space, 0px); }
 }
 
 /* ---------- Waiting-room panel: short code line, small print, tidy difficulty row ---------- */
-.panel .lobby-code { margin-bottom: 0.4rem; }
+.panel .share-line { margin-bottom: 0.4rem; }
 .panel .fine { font-size: 0.82rem; line-height: 1.35; opacity: 0.8; max-width: 52ch; margin-bottom: 0.9rem; }
 .panel .difficulty { margin: 0.4rem 0 1rem; }
 @media (max-width: 560px) {
   .panel h2 { font-size: 1.3rem; }
-  .panel .lobby-code { font-size: 0.88rem; }
+  .panel .share-line { font-size: 0.88rem; }
   .panel .fine { font-size: 0.75rem; margin-bottom: 0.6rem; }
   .panel .difficulty { margin: 0.4rem 0 0.7rem; }
   .panel .difficulty .diff { font-size: 0.85rem; padding: 0.4rem 0.3rem; }
   .panel #start { padding: 0.7rem 1rem; font-size: 0.95rem; }
 }
+.panel .share-line { background: none; padding: 0; letter-spacing: normal; font-weight: 500; }
+.panel .fine { max-width: none; }

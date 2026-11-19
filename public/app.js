@@ -264,7 +264,7 @@ function renderLobby(rooms) {
   for (let i = 0; i < rooms.length; i++) {
     const r = rooms[i];
     html += '<li class="lobby-row">' +
-      '<span class="lobby-code">' + esc(r.code) + '</span>' +
+      '<span class="share-line">' + esc(r.code) + '</span>' +
       '<span class="lobby-host">' + esc(r.host) + '<small>' + (r.ranked ? 'Ranked \u00b7 ' + r.fee + ' coins' : 'Casual \u00b7 free') + ' \u00b7 ' + esc(capital(r.difficulty)) + '</small></span>' +
       '<span class="lobby-seats">' + r.players + '/' + r.max + '</span>' +
       '<button class="btn secondary" type="button" data-code="' + esc(r.code) + '">Join</button></li>';
@@ -866,7 +866,7 @@ function renderPanel(room, me, rank) {
 
   if (room.status === 'lobby') {
     html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2>' +
-      '<p class="lobby-code">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' +
+      '<p class="share-line">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' +
       '<p class="fine">' + (room.ranked
         ? 'Ranked: ' + room.fee + ' coins per racer, rating changes. Leaving after the start forfeits your fee. Alone = free practice.'
         : 'Casual: free to play. No coins or rating changes.') + '</p>';
