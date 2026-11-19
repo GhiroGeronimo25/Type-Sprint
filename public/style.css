@@ -295,6 +295,14 @@ input[type="text"]:focus { outline: none; background: #fff; box-shadow: 4px 4px 
   font-variant-numeric: tabular-nums;
 }
 
+.count-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 16, 60, 0.55);
+  pointer-events: none; /* the keyboard focus stays on the typing box */
+}
+.count-overlay .count { color: var(--signal); text-shadow: 6px 6px 0 var(--ink); }
+
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
 .stats div {
   display: flex;
@@ -726,13 +734,13 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
 @media (max-width: 560px) {
   /* the room bar: row 1 = Lobby button + coins, row 2 = room code + what is happening. Not sticky. */
   .bar { position: static; display: grid; grid-template-columns: auto 1fr; grid-template-areas: "back chip" "code status"; align-items: center; gap: 0.5rem 0.6rem; margin: 0 0 0.6rem; padding: 0; }
-  .bar #backHome { grid-area: back; justify-self: start; }
+  .bar #toLobby { grid-area: back; justify-self: start; }
   .bar #walletChip { grid-area: chip; justify-self: end; }
   .bar .code { grid-area: code; justify-self: start; transform: none; padding: 0.2rem 0.7rem; }
   .bar .code strong { font-size: 1.3rem; }
   .bar .status { grid-area: status; font-size: 0.95rem; line-height: 1.2; min-width: 0; }
   .bar .status-extra, .chip-rating { display: none; }
-  .bar #leave { display: none; } /* same as the Lobby button */
+  .bar #leave { grid-area: back; justify-self: end; }
 }
 
 /* ---------- Phones: scrolling header and the room screen ---------- */
@@ -834,7 +842,7 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
 
   /* room bar: row 1 = Lobby (left) and room code (right); row 2 = status, plus coins when ranked */
   .bar { grid-template-columns: 1fr auto; grid-template-areas: "back code" "status chip"; margin: 0 0 0.9rem; }
-  .bar #backHome { grid-area: back; justify-self: start; }
+  .bar #toLobby { grid-area: back; justify-self: start; }
   .bar .code { grid-area: code; justify-self: end; }
   .bar .status { grid-area: status; }
   .bar #walletChip { grid-area: chip; justify-self: end; }
