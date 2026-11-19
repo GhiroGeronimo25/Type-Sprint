@@ -987,3 +987,16 @@ body { padding-top: var(--nav-space, 0px); }
   #raceList li > :nth-child(7) { grid-column: 1 / -1; font-size: 0.85rem; }
   #raceList li > .tag { justify-self: start; }
 }
+
+/* ---------- Phones: compact "Pick how to start" ---------- */
+@media (max-width: 560px) {
+  .start-option .muted { display: none; }
+  .start-option { gap: 0; }
+  .btn.big { padding: 0.65rem 0.8rem; font-size: 0.95rem; box-shadow: 3px 3px 0 var(--ink); }
+  .start-split { gap: 0.6rem; margin-top: 0.6rem; }
+  /* code box and Join button side by side on one row */
+  .join-inputs { flex-wrap: nowrap; gap: 0.5rem; }
+  .join-inputs #code { width: 5rem; flex: none; padding: 0.6rem 0.3rem; font-size: 0.95rem; }
+  .join-inputs .btn { flex: 1; padding: 0.65rem 0.8rem; font-size: 0.95rem; box-shadow: 3px 3px 0 var(--ink); }
+  .searching { margin-top: 0.6rem; font-size: 0.85rem; }
+}
