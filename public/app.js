@@ -961,6 +961,16 @@ function dropStrayStart(value) {
   return value;
 }
 
+// The box is only ever appended to or backspaced. If the phone moves the caret to the start, every new letter goes
+// in front of the others and the text comes out backwards ("eht" for "the"): put the caret back at the end.
+function caretToEnd() {
+  const box = $('typing');
+  const end = box.value.length;
+  try {
+    if (box.selectionStart !== end || box.selectionEnd !== end) box.setSelectionRange(end, end);
+  } catch (e) { /* not every browser allows it */ }
+}
+
 function onTyping() {
   caretToEnd();
   const raw = $('typing').value;
