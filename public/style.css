@@ -953,10 +953,29 @@ body { padding-top: var(--nav-space, 0px); }
 .user-bar .btn.ghost { padding: 0.45rem 1.1rem; font-size: 1rem; }
 .user-bar .chip { font-size: 1rem; }
 @media (max-width: 760px) {
-  .topnav { top: 0; transition: transform 0.22s ease; }
-  .topnav.nav-hidden { transform: translateY(calc(-100% - 20px)); }
-  .topnav-inner { padding-top: 0.6rem; padding-bottom: 0.6rem; }
-  .brand { font-size: 1.6rem; }
-  .navtab { font-size: 0.98rem; padding: 0.4rem 0.7rem; min-height: 42px; }
-  .user-bar .btn.ghost { font-size: 0.92rem; min-height: 40px; }
+  body::before { z-index: 3; }
+  /* the nav carries its own checkered band so it slides away with it */
+  .topnav {
+    top: 0; padding-top: 16px; transition: transform 0.22s ease;
+    background:
+      linear-gradient(var(--ink), var(--ink)) 0 16px / 100% calc(100% - 16px) no-repeat,
+      repeating-conic-gradient(var(--ink) 0 25%, #fff 0 50%) 0 0 / 16px 16px;
+  }
+  .topnav.nav-hidden { transform: translateY(-100%); }
+  /* one row: logo left, coins + log out right; tabs on a row of their own */
+  .topnav-inner { flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; padding-top: 0.45rem; padding-bottom: 0.45rem; }
+  .brand { font-size: 1.45rem; flex: 0 0 auto; }
+  .user-bar { margin-left: auto; gap: 0.5rem; font-size: 0.95rem; }
+  .user-bar .chip { font-size: 0.9rem; padding: 0.15rem 0.7rem; white-space: nowrap; }
+  .user-bar .btn.ghost { font-size: 0.9rem; padding: 0.25rem 0.8rem; min-height: 36px; }
+  .tabs { order: 3; flex: 1 1 100%; justify-content: space-between; gap: 0.1rem; }
+  .navtab { font-size: 0.95rem; padding: 0.3rem 0.65rem; min-height: 38px; }
+
+  /* race history rows: place / wpm / accuracy / time, then coins + rating, then room and date */
+  #raceList li { display: grid; grid-template-columns: auto 1fr 1fr 1fr; gap: 0.15rem 0.75rem; align-items: baseline; padding: 0.7rem 0.1rem; }
+  #raceList li > :nth-child(1) { min-width: 2.4rem; }
+  #raceList li > :nth-child(5) { grid-column: 1 / 3; }
+  #raceList li > :nth-child(6) { grid-column: 3 / -1; justify-self: end; text-align: right; }
+  #raceList li > :nth-child(7) { grid-column: 1 / -1; font-size: 0.85rem; }
+  #raceList li > .tag { justify-self: start; }
 }

@@ -1135,7 +1135,8 @@ startAuth();
 (function () {
   const nav = $('topnav');
   function sync() {
-    const space = nav.hidden ? 0 : nav.offsetHeight + 16;
+    const phone = window.matchMedia('(max-width: 760px)').matches;
+    const space = nav.hidden ? 0 : nav.offsetHeight + (phone ? 0 : 16);
     document.documentElement.style.setProperty('--nav-space', space + 'px');
   }
   new ResizeObserver(sync).observe(nav);
