@@ -657,7 +657,15 @@ body.has-nav main { padding-top: 1.5rem; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: 4px 4px 0 var(--ink); }
 .searching { margin: 0.9rem 0 0; }
 @media (max-width: 560px) {
-  .seg.cols-3 { grid-template-columns: 1fr; }
+  /* choose your race: compact, no descriptions, difficulties stay in one row */
+  .seg.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .seg { gap: 0.4rem; }
+  .seg small { display: none; }
+  .seg span { padding: 0.5rem 0.4rem; align-items: center; justify-content: center; text-align: center; min-height: 0; }
+  .seg b { font-size: 0.85rem; }
+  .seg-group { margin-bottom: 0.7rem; }
+  .seg-group legend { font-size: 0.72rem; margin-bottom: 0.3rem; }
+  .setup-step .step-title { font-size: 1rem; margin-bottom: 0.6rem; }
   .start-split { grid-template-columns: 1fr; }
 }
 
@@ -693,7 +701,7 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
 @media (pointer: coarse) {
   .btn, .navtab, .chipbtn, .link, .lobby-row .btn { min-height: 44px; }
   .navtab { display: inline-flex; align-items: center; }
-  .seg span { min-height: 56px; }
+  .seg span { min-height: 44px; }
 }
 
 @media (max-width: 560px) {
