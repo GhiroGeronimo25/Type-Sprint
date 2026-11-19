@@ -734,7 +734,7 @@ function removePlayer(room, p) {
 // leaving on purpose: gone straight away
 function leaveRoom(socket) {
   const room = rooms[socket.data.code];
-  if (!room) return;
+  if (!room) { socket.data.code = null; return; } // a stale code must not leave the player stuck "in a room"
   socket.leave(room.code);
   socket.data.code = null;
   const p = findById(room, socket.id);
@@ -1100,7 +1100,8 @@ function onConnection(socket) {
   socket.data.code = null;
 
   async function onCreate(data, ack) {
-    if (socket.data.code) return;
+    if (typeof ack !== 'function') return;
+    if (socket.data.code) return ack({ ok: false, error: 'You are already in a room. Leave it first.' });
     const ranked = (data || {}).ranked !== false; // ranked unless the host picked casual
     const difficulty = passages.isDifficulty((data || {}).difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY; // anything else becomes the default
     const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now() };

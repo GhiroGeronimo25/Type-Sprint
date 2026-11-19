@@ -288,11 +288,34 @@ const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) $('code').value = urlRoom.toUpperCase().slice(0, 4);
 
 function onEntered(result) {
-  if (!result.ok) return showToast(result.error);
+  if (!result || !result.ok) return showToast(result && result.error ? result.error : 'Something went wrong. Please try again.');
   showSearching(false);
   localStorage.setItem('session', result.code);
   history.replaceState(null, '', '?room=' + result.code);
   showScreen('room');
+}
+
+// every home-screen button goes through this: it says so when the connection is down or the server stays silent
+function emitWithFeedback(event, payload, handler, onFail) {
+  if (!socket.connected) {
+    if (onFail) onFail();
+    showToast('Not connected to the server yet. Reconnecting...');
+    socket.connect();
+    return;
+  }
+  let done = false;
+  const timer = setTimeout(function () {
+    if (done) return;
+    done = true;
+    if (onFail) onFail();
+    showToast('The server did not answer. Please try again.');
+  }, 10000);
+  socket.emit(event, payload, function (res) {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    handler(res);
+  });
 }
 
 // ---------- quick match ----------
@@ -305,7 +328,7 @@ function showSearching(on) {
 function quickMatch() {
   const mode = document.querySelector('input[name="mode"]:checked');
   const level = document.querySelector('input[name="difficulty"]:checked');
-  socket.emit('match:join', {
+  emitWithFeedback('match:join', {
     name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium',
   }, function (res) {
     if (!res || !res.ok) return showToast(res && res.error ? res.error : 'Could not start searching.');
@@ -332,11 +355,11 @@ function onMatchFound(data) {
 function createRoom() {
   const mode = document.querySelector('input[name="mode"]:checked');
   const level = document.querySelector('input[name="difficulty"]:checked');
-  socket.emit('room:create', { name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium' }, onEntered);
+  emitWithFeedback('room:create', { name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium' }, onEntered);
 }
 
 function joinRoom() {
-  socket.emit('room:join', { name: $('name').value, code: $('code').value, pid: pid }, onEntered);
+  emitWithFeedback('room:join', { name: $('name').value, code: $('code').value, pid: pid }, onEntered);
 }
 
 function onHomeKey(event) {
@@ -734,6 +757,7 @@ socket.on('match:status', onMatchStatus);
 socket.on('match:found', onMatchFound);
 socket.on('disconnect', onDisconnect);
 socket.on('connect_error', function (err) {
+  if (!err || err.message !== 'unauthorized') showToast('Cannot reach the server. Retrying...');
   if (err && err.message === 'unauthorized') {
     showToast('Your login expired. Please log in again.');
     if (supa) supa.auth.signOut();
