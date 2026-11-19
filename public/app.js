@@ -349,7 +349,7 @@ function leaveRoom() {
   localStorage.removeItem('session');
   socket.emit('room:leave');
   goHome();
-  $('lobby').scrollIntoView(); // "← Lobby" lands on the open rooms list, not the top of the home page
+  $('lobby').scrollIntoView(); // leaving lands on the open rooms list
 }
 
 function copyLink() {
@@ -374,7 +374,6 @@ $('cancelSearch').addEventListener('click', cancelSearch);
 $('name').addEventListener('keydown', onHomeKey);
 $('code').addEventListener('keydown', onHomeKey);
 $('leave').addEventListener('click', leaveRoom);
-$('backHome').addEventListener('click', leaveRoom);
 $('copyLink').addEventListener('click', copyLink);
 
 // The old browser-only "saved races" list is gone: race history lives on the account. Tidy up what it left behind.
