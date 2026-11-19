@@ -889,15 +889,15 @@ function buildPassage() {
 
 // ok = typed right, bad = typed wrong, cur = the next letter to type
 function updatePassage(input) {
-  const correct = commonPrefix(input, state.text);
   for (let i = 0; i < state.chars.length; i++) {
     let cls = '';
-    if (i < input.length && input[i] === state.text[i]) cls = i < correct ? 'ok' : 'ok late'; // late = typed after a mistake: not counted until it is fixed
+    if (i < input.length && input[i] === state.text[i]) cls = 'ok';
     else if (i < input.length) cls = 'bad';
     else if (i === input.length) cls = 'cur';
     state.chars[i].className = cls;
   }
 }
+
 
 
 // ---------- typing ----------

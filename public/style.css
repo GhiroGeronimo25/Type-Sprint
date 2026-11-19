@@ -693,5 +693,3 @@ body.has-nav main { padding-top: 1.5rem; }
   .start-split { grid-template-columns: 1fr; }
 }
 
-/* letters typed after a mistake look right but do not count until the mistake is fixed */
-#passage span.late { opacity: 0.5; }
