@@ -16,11 +16,14 @@ const GRACE_MS = 120000;   // how long a disconnected player's seat is held for 
 const MAX_CPS = 25;        // fastest believable typing speed (characters per second); anything beyond is rejected and flagged
 const FLAG_WPM = 250;      // an average speed no human sustains: flagged (needs FLAG_MIN_LETTERS so a short burst can't trip it)
 const FLAG_MIN_LETTERS = 40;
+const RESERVE_MS = Number(process.env.RESERVE_MS) || 60000;         // how long a room made through the REST API waits for its host to connect
+const MATCH_JOIN_MS = Number(process.env.MATCH_JOIN_MS) || 15000;   // how long matched players have to connect to their room
 
 const app = express();
 const server = http.createServer(app);
 const io = new socketio.Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json({ limit: '4kb' })); // request bodies for the REST room and matchmaking endpoints
 
 // The browser needs the project URL and the ANON key to show the login form. Both are public by design.
 // (Never expose SUPABASE_SERVICE_KEY here.)
@@ -631,6 +634,7 @@ function cleanName(rawName) {
 
 function joinRoom(socket, room, rawName, pid) {
   cancelSearch(socket); // joining a room ends any quick-match search
+  if (pid) matchmaker.remove(pid); // ... including one started through the REST API
   socket.leave('lobby'); // a player in a room no longer needs the open-rooms list
   const base = cleanName(rawName);
   let name = base;
@@ -743,24 +747,56 @@ function cancelSearch(socket) {
   }
 }
 
+// Players who queued through the REST API have no socket yet: their seat in the room is held for them, they
+// learn the room code from GET /api/matchmaking, and they claim the seat with a room:join event.
+const matchResults = {}; // pid -> { code, at }: a REST searcher's finished match, until they connect
+
+function matchFor(pid) {
+  const m = matchResults[pid];
+  if (!m) return null;
+  if (Date.now() - m.at > MATCH_JOIN_MS + 5000 || !rooms[m.code]) { delete matchResults[pid]; return null; }
+  return m;
+}
+setInterval(function () { Object.keys(matchResults).forEach(matchFor); }, 10000).unref();
+
+function startMatchedRace(room) {
+  startRace(room).then(function (error) {
+    if (error) io.to(room.code).emit('race:notice', { message: error });
+  }).catch(logError('Could not start matched race ' + room.code));
+}
+
+// not everyone showed up in time: race with whoever is here (2+), or let the room become a normal one
+function matchDeadline(room) {
+  if (rooms[room.code] !== room || !room.matchPids || room.status !== 'lobby') return;
+  room.matchPids = null;
+  if (room.players.length === 0) { delete rooms[room.code]; return; }
+  if (room.players.length >= 2) return startMatchedRace(room);
+  room.listed = true;
+  io.to(room.code).emit('race:notice', { message: 'Your opponents did not connect in time. Wait here or leave.' });
+  broadcast(room);
+}
+
 // a group of players the queue has matched: put them in a fresh room and start the countdown
 function startMatch(group) {
-  const first = group[0];
+  const first = group.filter(function (t) { return t.socket; })[0];
+  const waiting = group.filter(function (t) { return !t.socket; }); // REST searchers: they still have to connect
   const room = {
-    code: randomCode(), hostId: first.socket.id, ranked: first.ranked, difficulty: first.difficulty,
+    code: randomCode(), hostId: first ? first.socket.id : null, ranked: group[0].ranked, difficulty: group[0].difficulty,
     status: 'lobby', text: '', startAt: 0, players: [], listed: false, createdAt: Date.now(), // quick-match rooms start at once: not listed
   };
+  if (waiting.length > 0) room.matchPids = group.map(function (t) { return t.pid; });
   rooms[room.code] = room;
   group.forEach(function (t) {
+    if (!t.socket) { matchResults[t.pid] = { code: room.code, at: Date.now() }; return; }
     t.socket.data.searching = null;
     const player = joinRoom(t.socket, room, t.name, t.pid);
     player.rating = t.rating;
     io.to(t.socket.id).emit('match:found', { code: room.code });
     sendAccount(player);
   });
-  startRace(room).then(function (error) {
-    if (error) io.to(room.code).emit('race:notice', { message: error });
-  }).catch(logError('Could not start matched race ' + room.code));
+  if (waiting.length === 0) return startMatchedRace(room);
+  room.matchTimer = setTimeout(function () { matchDeadline(room); }, MATCH_JOIN_MS);
+  if (room.matchTimer.unref) room.matchTimer.unref();
 }
 
 function runMatchmaking() {
@@ -772,9 +808,150 @@ setInterval(function () {
   runMatchmaking();
   const now = Date.now();
   matchmaker.all().forEach(function (t) {
+    if (!t.socket) return; // REST searchers poll GET /api/matchmaking instead
     io.to(t.socket.id).emit('match:status', { waitedMs: now - t.joinedAt, searching: matchmaker.poolSize(t) });
   });
 }, Number(process.env.MM_TICK_MS) || 1000).unref();
+
+// ---------- REST API: rooms and matchmaking ----------
+// Same login as the other endpoints (Authorization: Bearer <token>). Nothing here ever returns a player id.
+// A race is typed over a live connection, so the REST calls reserve a place and the socket claims it:
+//   rooms:        POST /api/rooms (a room is held for you for RESERVE_MS), then emit room:join { code } on your socket.
+//   matchmaking:  POST /api/matchmaking to queue, poll GET /api/matchmaking until it says "matched" with a code,
+//                 then emit room:join { code } within MATCH_JOIN_MS. DELETE /api/matchmaking leaves the queue.
+function roomOfPid(pid) {
+  const codes = Object.keys(rooms);
+  for (let i = 0; i < codes.length; i++) {
+    if (findByPid(rooms[codes[i]], pid)) return rooms[codes[i]];
+  }
+  return null;
+}
+
+function reservedRoomOf(pid) {
+  const codes = Object.keys(rooms);
+  for (let i = 0; i < codes.length; i++) if (rooms[codes[i]].reservedHost === pid) return rooms[codes[i]];
+  return null;
+}
+
+function restName(user) {
+  return cleanName(user.username || String(user.email || '').split('@')[0]);
+}
+
+// returns an error message, or '' when the body's ranked/difficulty are fine
+function checkRaceSettings(body) {
+  if (body.ranked !== undefined && typeof body.ranked !== 'boolean') return '"ranked" must be true or false.';
+  if (body.difficulty !== undefined && !passages.isDifficulty(body.difficulty)) return '"difficulty" must be easy, medium or hard.';
+  return '';
+}
+
+function roomView(room, pid) {
+  const host = findById(room, room.hostId) || room.players[0];
+  return {
+    code: room.code, status: room.status, ranked: room.ranked, difficulty: room.difficulty,
+    host: host ? host.name : null, players: room.players.map(function (p) { return { name: p.name, rating: p.rating, away: !!p.away }; }),
+    max: MAX_PLAYERS, fee: ENTRY_FEE, pot: room.pot || 0, youAreIn: !!findByPid(room, pid),
+  };
+}
+
+// GET /api/rooms -> { rooms: [{ code, host, ranked, difficulty, players, max, fee }] }  the open rooms, newest first
+app.get('/api/rooms', requireLogin, function (req, res) {
+  res.json({ rooms: openRooms() });
+});
+
+// GET /api/rooms/:code -> { code, status, ranked, difficulty, host, players: [{ name, rating, away }], max, fee, pot, youAreIn }
+// (a room still waiting for its host to connect is only visible to its owner; the passage text is never included)
+app.get('/api/rooms/:code', requireLogin, function (req, res) {
+  const room = rooms[String((req.params || {}).code || '').toUpperCase().slice(0, 4)];
+  if (!room || (room.players.length === 0 && room.reservedHost !== req.user.id)) return res.status(404).json({ error: 'No room with that code.' });
+  res.json(roomView(room, req.user.id));
+});
+
+// POST /api/rooms { ranked?: true, difficulty?: 'easy'|'medium'|'hard' } -> 201 { code, ranked, difficulty, expiresInMs }
+// Reserves a room with you as the host. Connect and emit room:join { code } within expiresInMs to take the seat.
+app.post('/api/rooms', requireLogin, function (req, res) {
+  const body = req.body || {};
+  const bad = checkRaceSettings(body);
+  if (bad) return res.status(400).json({ error: bad });
+  const pid = req.user.id;
+  if (roomOfPid(pid) || reservedRoomOf(pid)) return res.status(409).json({ error: 'You already have a room. Leave it first.' });
+  if (matchmaker.has(pid) || matchFor(pid)) return res.status(409).json({ error: 'You are in matchmaking. Cancel it first.' });
+  const room = {
+    code: randomCode(), hostId: null, reservedHost: pid, ranked: body.ranked !== false,
+    difficulty: body.difficulty || passages.DEFAULT_DIFFICULTY, status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now(),
+  };
+  rooms[room.code] = room;
+  room.reserveTimer = setTimeout(function () { // the host never connected: free the code
+    if (rooms[room.code] === room && room.reservedHost) delete rooms[room.code];
+  }, RESERVE_MS);
+  if (room.reserveTimer.unref) room.reserveTimer.unref();
+  res.status(201).json({ code: room.code, ranked: room.ranked, difficulty: room.difficulty, expiresInMs: RESERVE_MS });
+});
+
+// DELETE /api/rooms/:code -> { ok: true }   cancels your own reservation, before you have connected
+app.delete('/api/rooms/:code', requireLogin, function (req, res) {
+  const room = rooms[String((req.params || {}).code || '').toUpperCase().slice(0, 4)];
+  if (!room || room.reservedHost !== req.user.id) return res.status(404).json({ error: 'You have no reserved room with that code.' });
+  clearTimeout(room.reserveTimer);
+  delete rooms[room.code];
+  res.json({ ok: true });
+});
+
+// GET /api/matchmaking -> { status: 'idle' }
+//                      or { status: 'searching', ranked, difficulty, waitedMs, searching }
+//                      or { status: 'matched', code, expiresInMs }  (emit room:join { code } to take your seat)
+app.get('/api/matchmaking', requireLogin, function (req, res) {
+  const pid = req.user.id;
+  const m = matchFor(pid);
+  if (m) return res.json({ status: 'matched', code: m.code, expiresInMs: Math.max(0, MATCH_JOIN_MS - (Date.now() - m.at)) });
+  const t = matchmaker.all().filter(function (x) { return x.pid === pid; })[0];
+  if (!t) return res.json({ status: 'idle' });
+  res.json({ status: 'searching', ranked: t.ranked, difficulty: t.difficulty, waitedMs: Date.now() - t.joinedAt, searching: matchmaker.poolSize(t) });
+});
+
+// POST /api/matchmaking { ranked?: true, difficulty?: ... } -> 202 { status: 'searching', ranked, difficulty }
+app.post('/api/matchmaking', requireLogin, async function (req, res) {
+  try {
+    const body = req.body || {};
+    const bad = checkRaceSettings(body);
+    if (bad) return res.status(400).json({ error: bad });
+    const pid = req.user.id;
+    const ranked = body.ranked !== false;
+    const difficulty = body.difficulty || passages.DEFAULT_DIFFICULTY;
+    const busy = function () {
+      if (roomOfPid(pid) || reservedRoomOf(pid)) return 'Leave your current room first.';
+      if (matchmaker.has(pid)) return 'You are already searching for a match.';
+      if (matchFor(pid)) return 'You already have a match waiting. Join it first.';
+      return '';
+    };
+    if (busy()) return res.status(409).json({ error: busy() });
+    let account;
+    try {
+      account = await accounts.join(pid, restName(req.user));
+    } catch (e) {
+      console.error('Could not create account for matchmaking:', e.message);
+      return res.status(502).json({ error: 'Could not reach the account service. Please try again.' });
+    }
+    if (ranked && account.coins < ENTRY_FEE) {
+      return res.status(403).json({ error: 'You need ' + ENTRY_FEE + ' coins for a ranked match. Try a casual match.' });
+    }
+    if (busy()) return res.status(409).json({ error: busy() }); // things can change while the database answers
+    matchmaker.add({ id: pid, pid: pid, socket: null, name: restName(req.user), rating: account.rating, ranked: ranked, difficulty: difficulty, joinedAt: Date.now() });
+    res.status(202).json({ status: 'searching', ranked: ranked, difficulty: difficulty });
+    runMatchmaking(); // someone may already be waiting
+  } catch (e) {
+    console.error('POST /api/matchmaking failed:', e.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Something went wrong.' });
+  }
+});
+
+// DELETE /api/matchmaking -> { status: 'idle' }   leaves the queue (also drops a match you have not joined yet)
+app.delete('/api/matchmaking', requireLogin, function (req, res) {
+  const pid = req.user.id;
+  const t = matchmaker.all().filter(function (x) { return x.pid === pid; })[0];
+  if (t && t.socket) cancelSearch(t.socket); else matchmaker.remove(pid);
+  delete matchResults[pid];
+  res.json({ status: 'idle' });
+});
 
 function onConnection(socket) {
   socket.data.code = null;
@@ -812,9 +989,18 @@ function onConnection(socket) {
       broadcast(room);
       return ack({ ok: true, code: code });
     } else if (started) error = 'That race has already started.';
+    else if (room.reservedHost && room.reservedHost !== pid && room.players.length === 0) error = 'The host has not arrived yet.';
+    else if (room.matchPids && room.matchPids.indexOf(pid) < 0) error = 'That room is reserved for a matched race.';
     else if (room.players.length >= MAX_PLAYERS) error = 'That room is full (' + MAX_PLAYERS + ' players max).';
 
     if (error) return ack({ ok: false, error: error });
+    // a room made through POST /api/rooms: its owner takes the host seat; a matched room: first one in hosts
+    if (room.reservedHost === pid) {
+      room.reservedHost = null;
+      clearTimeout(room.reserveTimer);
+      room.hostId = socket.id;
+    } else if (room.matchPids && !findById(room, room.hostId)) room.hostId = socket.id;
+    delete matchResults[pid];
     const player = joinRoom(socket, room, socket.data.name, pid);
     try {
       await registerPlayer(room, player);
@@ -824,6 +1010,12 @@ function onConnection(socket) {
       return ack({ ok: false, error: 'Could not reach the account service. Please try again.' });
     }
     ack({ ok: true, code: code });
+    // matched room: everybody has connected, so start now instead of waiting for the deadline
+    if (room.matchPids && room.status === 'lobby' && !room.starting && room.players.length >= room.matchPids.length) {
+      clearTimeout(room.matchTimer);
+      room.matchPids = null;
+      startMatchedRace(room);
+    }
   }
 
   function onRejoin(data, ack) {

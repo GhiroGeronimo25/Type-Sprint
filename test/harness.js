@@ -50,8 +50,9 @@ const realLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === 'dotenv') return { config() {} };
   if (request === 'express') {
-    const express = () => ({ use() {}, get(path, ...handlers) { routes[path] = handlers; } });
+    const express = () => ({ use() {}, get(path, ...handlers) { routes[path] = handlers; }, post(path, ...handlers) { routes['POST ' + path] = handlers; }, delete(path, ...handlers) { routes['DELETE ' + path] = handlers; } });
     express.static = () => () => {};
+    express.json = () => () => {};
     return express;
   }
   if (request === 'socket.io') {
@@ -102,7 +103,19 @@ function apiGet(path, opts) {
   });
 }
 
-module.exports = { apiGet, runAuth: (token) => new Promise((resolve) => {
+// POST / DELETE like Express: apiSend('POST', '/api/rooms', { token, body }) -> { status, body }
+function apiSend(method, path, opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    const req = { path, params: opts.params || {}, headers: opts.token ? { authorization: 'Bearer ' + opts.token } : {}, query: {}, body: opts.body };
+    const res = { code: 200, headersSent: false, status(c) { this.code = c; return this; }, json(body) { this.headersSent = true; resolve({ status: this.code, body }); } };
+    const chain = routes[method + ' ' + path].slice();
+    const next = () => { const fn = chain.shift(); if (fn) fn(req, res, next); };
+    next();
+  });
+}
+
+module.exports = { apiGet, apiSend, runAuth: (token) => new Promise((resolve) => {
   const socket = { handshake: { auth: { token } }, data: {} };
   authMiddleware(socket, (err) => resolve({ err, socket }));
 }), sleep, emits, calls, wallets, connect, lastState, called };
