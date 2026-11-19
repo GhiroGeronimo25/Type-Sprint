@@ -770,6 +770,7 @@ function render() {
   $('status').appendChild(main);
   $('status').appendChild(extra);
   $('room').dataset.status = room.status;
+  $('room').dataset.solo = practice ? '1' : '0';
   $('stats').hidden = room.status === 'lobby';
   $('passage').hidden = room.status === 'lobby' || !state.text;
   $('hint').hidden = room.status !== 'racing';

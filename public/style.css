@@ -823,3 +823,37 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   .ledger .when { grid-column: 1 / -1; margin-left: 0; font-size: 0.75rem; }
   #ledgerMore, #raceMore { width: 100%; margin-top: 0.6rem; }
 }
+
+/* ---------- Phones: breathing room at the top, the room bar, and the Leaderboard ---------- */
+@media (max-width: 560px) {
+  /* the checkered band is 16px tall: leave space below it (the room has no top menu) */
+  main { padding-top: 2.4rem; }
+  body.has-nav main { padding-top: 1.2rem; }
+
+  /* room bar: row 1 = Lobby (left) and room code (right); row 2 = status, plus coins when ranked */
+  .bar { grid-template-columns: 1fr auto; grid-template-areas: "back code" "status chip"; margin: 0 0 0.9rem; }
+  .bar #backHome { grid-area: back; justify-self: start; }
+  .bar .code { grid-area: code; justify-self: end; }
+  .bar .status { grid-area: status; }
+  .bar #walletChip { grid-area: chip; justify-self: end; }
+
+  /* alone in the room: the single racer lane is just noise once the race is on */
+  #room[data-solo="1"]:not([data-status="lobby"]) .lanes { display: none; }
+
+  /* leaderboard: one small card per player instead of a table that scrolls sideways */
+  #board .table-wrap { overflow: visible; }
+  #boardTable, #boardTable tbody { display: block; width: 100%; }
+  #boardTable thead { display: none; }
+  #boardTable tr { display: grid; grid-template-columns: 2.2rem 1fr 1fr auto; grid-template-areas: "rank name name rating" ". wpm wins ."; align-items: baseline; gap: 0.1rem 0.6rem; padding: 0.65rem 0.4rem; border-bottom: 2px solid #e3e6f3; border-radius: 10px; }
+  #boardTable td { padding: 0; border: 0; white-space: normal; background: none; }
+  #boardTable tr.you { background: var(--signal); }
+  #boardTable tr.you td { background: none; }
+  #boardTable td:nth-child(1) { grid-area: rank; font-weight: 800; color: var(--muted); }
+  #boardTable td:nth-child(2) { grid-area: name; font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #boardTable td:nth-child(3) { grid-area: rating; font-weight: 800; font-size: 1.15rem; }
+  #boardTable td:nth-child(4) { grid-area: wpm; font-size: 0.8rem; color: var(--muted); }
+  #boardTable td:nth-child(5) { grid-area: wins; font-size: 0.8rem; color: var(--muted); }
+  #boardTable tr.you td:nth-child(1), #boardTable tr.you td:nth-child(4), #boardTable tr.you td:nth-child(5) { color: var(--ink); }
+  #boardTable td:nth-child(4)::after { content: " best WPM"; }
+  #boardTable td:nth-child(5)::after { content: " wins / races"; }
+}
