@@ -765,6 +765,9 @@ function render() {
   $('status').appendChild(main);
   $('status').appendChild(extra);
   $('room').dataset.status = room.status;
+  $('countOverlay').hidden = room.status !== 'countdown';
+  // back to the room's waiting lobby: the host, when racing alone or once the race is over
+  $('toLobby').hidden = !(room.hostId === socket.id && (room.status === 'finished' || (practice && room.status !== 'lobby')));
   $('room').dataset.solo = practice ? '1' : '0';
   $('stats').hidden = room.status === 'lobby';
   $('passage').hidden = room.status === 'lobby' || !state.text;
@@ -846,7 +849,7 @@ function renderPanel(room, me, rank) {
     if (isHost) html += '<button id="start" class="btn" type="button">' + (room.players.length === 1 ? 'Start practice' : 'Start race') + '</button>';
     else html += '<p>Waiting for the host to start.</p>';
   } else if (room.status === 'countdown') {
-    html = '<div class="count" id="count">3</div>';
+    html = ''; // the 3-2-1 is an overlay (#countOverlay), so the page does not jump
   } else if (room.status === 'finished') {
     if (me.forfeited) {
       html = '<h2>You forfeited this race</h2><p>You disconnected, so your ' + room.fee + '-coin entry fee stayed in the pot.';
@@ -900,6 +903,10 @@ function resultHtml(me) {
     '<li><span>Rating</span><b class="' + (r.ratingDelta < 0 ? 'out' : 'in') + '">' + r.ratingBefore + ' \u2192 ' + r.ratingAfter +
     ' (' + signed(r.ratingDelta) + ')</b></li></ul>';
 }
+
+$('toLobby').addEventListener('click', function () {
+  socket.emit('room:lobby');
+});
 
 function startRace() {
   socket.emit('race:start');
