@@ -638,7 +638,7 @@ function renderWallet() {
   } else {
     loadHistory(true);
   }
-  $('walletChip').textContent = a.coins + ' coins \u00b7 rating ' + a.rating;
+  $('walletChip').innerHTML = Number(a.coins) + ' coins<span class="chip-rating"> \u00b7 rating ' + Number(a.rating) + '</span>';
   $('coinPill').hidden = false;
   $('coinPill').textContent = a.coins + ' coins \u00b7 ' + a.rating;
   refreshChip();
@@ -752,15 +752,23 @@ function render() {
   if (index < 0) return;
   refreshChip();
   const me = room.players[index];
+  const practice = room.players.length === 1; // racing alone is practice: nobody to beat, nothing won or lost
   const labels = {
     lobby: room.players.length + ' in the room',
     countdown: 'Get ready',
-    racing: 'Race in progress',
-    finished: 'Race finished',
+    racing: practice ? 'Practice in progress' : 'Race in progress',
+    finished: practice ? 'Practice finished' : 'Race finished',
   };
 
   $('roomCode').textContent = room.code;
-  $('status').textContent = labels[room.status] + (room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual') + ' \u00b7 ' + capital(room.difficulty);
+  $('status').textContent = '';
+  const main = document.createElement('span');
+  main.textContent = labels[room.status];
+  const extra = document.createElement('span');
+  extra.className = 'status-extra';
+  extra.textContent = (practice && room.status !== 'lobby' ? '' : room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual') + ' \u00b7 ' + capital(room.difficulty);
+  $('status').appendChild(main);
+  $('status').appendChild(extra);
   $('room').dataset.status = room.status;
   $('stats').hidden = room.status === 'lobby';
   $('passage').hidden = room.status === 'lobby' || !state.text;
@@ -830,15 +838,16 @@ function difficultyHtml(room, isHost) {
 function renderPanel(room, me, rank) {
   const isHost = room.hostId === socket.id;
   const winner = room.players[0];
+  const practice = room.players.length === 1; // alone in the room
   let html = '';
 
   if (room.status === 'lobby') {
-    html = '<h2>Waiting for racers</h2><p>Share the code <strong>' + room.code +
+    html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2><p>Share the code <strong>' + room.code +
       '</strong> or click it above to copy an invite link. ' + (room.ranked
-        ? 'Ranked: entry is ' + room.fee + ' coins per racer, and your rating changes. Disconnecting or leaving once the race has started forfeits your entry fee. Starting alone just returns your own fee.'
+        ? 'Ranked: entry is ' + room.fee + ' coins per racer and your rating changes. Leaving once the race has started forfeits your fee. Starting alone is practice: your fee comes back.'
         : 'Casual: free to play. No coins are spent or won and ratings do not change.') + '</p>';
     html += difficultyHtml(room, isHost);
-    if (isHost) html += '<button id="start" class="btn" type="button">Start race</button>';
+    if (isHost) html += '<button id="start" class="btn" type="button">' + (room.players.length === 1 ? 'Start practice' : 'Start race') + '</button>';
     else html += '<p>Waiting for the host to start.</p>';
   } else if (room.status === 'countdown') {
     html = '<div class="count" id="count">3</div>';
@@ -847,6 +856,11 @@ function renderPanel(room, me, rank) {
       html = '<h2>You forfeited this race</h2><p>You disconnected, so your ' + room.fee + '-coin entry fee stayed in the pot.';
     } else if (!me.entered) {
       html = '<h2>You watched this one</h2><p>You needed ' + room.fee + ' coins to enter.';
+    } else if (practice && me.finished) {
+      html = '<h2>Practice complete</h2><p>' + me.wpm + ' WPM, ' + me.accuracy +
+        '% accuracy, ' + (me.finishMs / 1000).toFixed(1) + ' seconds.';
+    } else if (practice) {
+      html = "<h2>Time's up</h2><p>You reached " + Math.round(me.progress * 100) + '% at ' + me.wpm + ' WPM.';
     } else if (me.finished) {
       html = '<h2>You finished ' + ordinal(rank) + '</h2><p>' + me.wpm + ' WPM, ' + me.accuracy +
         '% accuracy, ' + (me.finishMs / 1000).toFixed(1) + ' seconds.';
@@ -855,10 +869,18 @@ function renderPanel(room, me, rank) {
         Math.round(me.progress * 100) + '% at ' + me.wpm + ' WPM.';
     }
     if (winner.finished && winner.id !== me.id) html += ' ' + esc(winner.name) + ' won at ' + winner.wpm + ' WPM.';
-    html += '</p>' + resultHtml(me);
-    if (!room.ranked) html += '<p class="muted">Casual race: no coins or rating changed.</p>';
+    html += '</p>';
+    if (practice && me.entered) {
+      // alone in the room: the fee is handed back and the rating stays put, so there is no payout table to show
+      html += '<p class="muted">' + (room.ranked
+        ? 'Practice run: your ' + room.fee + '-coin entry fee was returned and your rating did not change.'
+        : 'Practice run: no coins or rating changed.') + '</p>';
+    } else {
+      html += resultHtml(me);
+      if (!room.ranked) html += '<p class="muted">Casual race: no coins or rating changed.</p>';
+    }
     html += difficultyHtml(room, isHost);
-    if (isHost) html += '<button id="start" class="btn" type="button">Race again</button>';
+    if (isHost) html += '<button id="start" class="btn" type="button">' + (practice ? 'Practice again' : 'Race again') + '</button>';
     else html += '<p>Waiting for the host to start another race.</p>';
   }
 
