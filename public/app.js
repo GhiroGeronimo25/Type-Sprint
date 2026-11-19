@@ -349,6 +349,7 @@ function leaveRoom() {
   localStorage.removeItem('session');
   socket.emit('room:leave');
   goHome();
+  $('lobby').scrollIntoView(); // "← Lobby" lands on the open rooms list, not the top of the home page
 }
 
 function copyLink() {
