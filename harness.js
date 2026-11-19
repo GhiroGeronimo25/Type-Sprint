@@ -1,0 +1,143 @@
+'use strict';
+// Shared test setup: runs the real server.js against fake Express, Socket.IO and accounts modules,
+// so the whole game flow can be tested with no database or network.
+// connect() gives a fake player socket; emits and calls record what the server sent and did.
+const Module = require('module');
+const path = require('path');
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const emits = [];                       // every message the server sent: { target, ev, data }
+const calls = [];                       // every accounts call: [name, ...args]
+const wallets = {};                     // pid -> coins, for the fake accounts
+const routes = {};                      // GET routes the server registered: path -> [middleware..., handler]
+let onConnection;
+let authMiddleware;
+
+function fakeAccounts() {
+  const log = (name) => (...args) => { calls.push([name, ...args]); };
+  return {
+    ENTRY_FEE: 50,
+    // test tokens look like "token:<userId>"; anything else is a forged or missing login
+    verifyToken: async (token) => (/^token:[A-Za-z0-9-]+$/.test(String(token)) ? { id: String(token).slice(6), email: '', username: 'tester' } : null),
+    ledgerPage: async (pid, offset, limit, type) => { calls.push(['ledgerPage', pid, offset, limit, type]); return { items: [{ id: 1, at: new Date().toISOString(), type: type || 'grant', amount: 500, balance: 500, room: '' }], hasMore: offset === 0 }; },
+    raceHistory: async (pid, offset, limit) => { calls.push(['raceHistory', pid, offset, limit]); return { items: [{ id: 7, room: 'ABCD', ranked: true, endedAt: new Date().toISOString(), rank: 1, wpm: 80, accuracy: 97, finished: true, progress: 1, seconds: 41.2, payout: 100, net: 50, ratingBefore: 1000, ratingAfter: 1012 }], hasMore: true }; },
+    raceDetail: async (pid, id) => { calls.push(['raceDetail', pid, id]); return id === 7 ? { id: 7, room: 'ABCD', ranked: true, endedAt: new Date().toISOString(), text: 'x', players: [{ rank: 1, name: 'Ann', wpm: 80 }] } : null; },
+    usernameAvailable: async (name) => name !== 'taken',
+    // REST auth: test emails pick the outcome ("bad@..." = wrong password, "dup@..." = email taken, "boom@..." = service down)
+    signUp: async (email, password, username) => {
+      calls.push(['signUp', email, username]);
+      const fail = (code) => Object.assign(new Error('auth ' + code), { code });
+      if (email.startsWith('dup')) throw fail('email_taken');
+      if (email.startsWith('race')) throw fail('username_taken');
+      if (email.startsWith('boom')) throw new Error('connection refused');
+      if (email.startsWith('confirm')) return { user: { email, username }, session: null };
+      return { user: { email, username }, session: { accessToken: 'token:' + username, refreshToken: 'r-' + username, tokenType: 'Bearer', expiresIn: 3600, expiresAt: 1 } };
+    },
+    signIn: async (email, password) => {
+      calls.push(['signIn', email]);
+      if (email.startsWith('bad')) throw Object.assign(new Error('auth'), { code: 'invalid_credentials' });
+      if (email.startsWith('boom')) throw new Error('connection refused');
+      return { user: { email, username: 'tester' }, session: { accessToken: 'token:tester', refreshToken: 'r-tester', tokenType: 'Bearer', expiresIn: 3600, expiresAt: 1 } };
+    },
+    refreshSession: async (rt) => {
+      calls.push(['refreshSession', rt]);
+      if (rt !== 'r-tester') throw Object.assign(new Error('auth'), { code: 'invalid_refresh' });
+      return { user: { email: 'a@b.co', username: 'tester' }, session: { accessToken: 'token:tester', refreshToken: 'r-tester-2', tokenType: 'Bearer', expiresIn: 3600, expiresAt: 2 } };
+    },
+    signOut: async (token) => { calls.push(['signOut', token]); },
+    join: async (pid) => { calls.push(['join', pid]); if (!(pid in wallets)) wallets[pid] = 500; return { rating: 1000, coins: wallets[pid], races: 0, wins: 0, ledger: [], entryFee: 50 }; },
+    view: async (pid) => ({ rating: 1000, coins: wallets[pid] || 0, races: 0, wins: 0, ledger: [], entryFee: 50 }),
+    collectEntries: async (code, pids, fee) => {
+      calls.push(['collectEntries', code, pids.slice(), fee]);
+      const entered = pids.filter((p) => wallets[p] >= fee);
+      return { entered, pot: entered.length * fee };
+    },
+    refundEntry: async (...a) => { log('refundEntry')(...a); return 0; },
+    voidPot: async (...a) => { log('voidPot')(...a); return []; },
+    voidAllPots: async () => 0,
+    settle: async (code, ranked, text) => {
+      calls.push(['settle', code, ranked, text]);
+      const out = {};
+      ranked.forEach((r, i) => { out[r.pid] = { rank: i + 1, payout: i === 0 ? 100 : 0, net: i === 0 ? 50 : -50, ratingBefore: 1000, ratingAfter: 1010 - i * 20, ratingDelta: 10 - i * 20 }; });
+      return out;
+    },
+    recentResults: async () => [],
+    recordRaceStats: async (code, ranked, difficulty, players) => { calls.push(['recordRaceStats', code, ranked, difficulty, players]); return players.length; },
+    playerStats: async (pid) => { calls.push(['playerStats', pid]); return { races: 2, flaggedRaces: 0, bestWpm: 80, avgWpm: 70, trend: [], mostMissed: [] }; },
+    leaderboard: async (limit, pid) => { calls.push(['leaderboard', limit, pid]); return [{ name: 'Ann', rating: 1100, races: 3, wins: 2, bestWpm: 80, isYou: false }]; },
+  };
+}
+
+const realLoad = Module._load;
+Module._load = function (request, parent, isMain) {
+  if (request === 'dotenv') return { config() {} };
+  if (request === 'express') {
+    const express = () => ({ use() {}, get(path, ...handlers) { routes[path] = handlers; }, post(path, ...handlers) { routes['POST ' + path] = handlers; }, delete(path, ...handlers) { routes['DELETE ' + path] = handlers; } });
+    express.static = () => () => {};
+    express.json = () => () => {};
+    return express;
+  }
+  if (request === 'socket.io') {
+    return { Server: class { use(fn) { authMiddleware = fn; } to(target) { return { emit: (ev, data) => emits.push({ target, ev, data }) }; } on(ev, fn) { if (ev === 'connection') onConnection = fn; } } };
+  }
+  if (request === 'http') return { createServer: () => ({ listen: (p, cb) => cb && cb() }) };
+  if (request === './accounts') return () => fakeAccounts();
+  return realLoad.apply(this, arguments);
+};
+process.env.PORT = '0';
+process.env.COUNTDOWN_MS = process.env.COUNTDOWN_MS || '120';   // short race so the whole flow runs in under a second
+process.env.RACE_MS = process.env.RACE_MS || '400';
+require(path.join(__dirname, '..', 'server.js'));
+Module._load = realLoad;
+
+let counter = 0;
+// connect() simulates a logged-in player. The server takes the player id from the verified login, never from
+// the message, so the fake logs each message's sender in as the pid the test names in it (data.pid).
+// connect({ loginAs: 'x' }) pins the login to 'x', so a test can try to spoof somebody else in the message.
+function connect(opts) {
+  const id = 'sock' + ++counter;
+  const handlers = {};
+  const pinned = opts && opts.loginAs;
+  const socket = {
+    id, data: {}, handlers, handshake: { auth: {} },
+    on(ev, fn) { handlers[ev] = fn; },
+    join() {}, leave() {},
+    emit(ev, data) { emits.push({ target: id, ev, data }); },
+  };
+  onConnection(socket);
+  const login = (data) => { socket.data.name = (data && data.name) || 'Racer'; socket.data.pid = pinned || String((data && data.pid) || socket.id).replace(/[^A-Za-z0-9-]/g, '').slice(0, 40); };
+  const ask = (ev, data) => new Promise((resolve) => { login(data); handlers[ev](data, resolve); });
+  return { socket, ask, fire: (ev, data) => { login(data); handlers[ev](data); } };
+}
+const lastState = (code) => [...emits].reverse().find((e) => e.ev === 'room:state' && e.data.code === code).data;
+const called = (name) => calls.filter((c) => c[0] === name);
+
+
+// calls a GET route like Express would: { token, query } -> { status, body }
+function apiGet(path, opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    const req = { path, params: opts.params || {}, headers: opts.token ? { authorization: 'Bearer ' + opts.token } : {}, query: opts.query || {}, ip: opts.ip };
+    const res = { code: 200, status(c) { this.code = c; return this; }, json(body) { resolve({ status: this.code, body }); } };
+    const chain = routes[path].slice();
+    const next = () => { const fn = chain.shift(); if (fn) fn(req, res, next); };
+    next();
+  });
+}
+
+// POST / DELETE like Express: apiSend('POST', '/api/rooms', { token, body }) -> { status, body }
+function apiSend(method, path, opts) {
+  opts = opts || {};
+  return new Promise((resolve) => {
+    const req = { path, params: opts.params || {}, headers: opts.token ? { authorization: 'Bearer ' + opts.token } : {}, query: {}, body: opts.body, ip: opts.ip };
+    const res = { code: 200, headersSent: false, status(c) { this.code = c; return this; }, json(body) { this.headersSent = true; resolve({ status: this.code, body }); } };
+    const chain = routes[method + ' ' + path].slice();
+    const next = () => { const fn = chain.shift(); if (fn) fn(req, res, next); };
+    next();
+  });
+}
+
+module.exports = { apiGet, apiSend, runAuth: (token) => new Promise((resolve) => {
+  const socket = { handshake: { auth: { token } }, data: {} };
+  authMiddleware(socket, (err) => resolve({ err, socket }));
+}), sleep, emits, calls, wallets, connect, lastState, called };

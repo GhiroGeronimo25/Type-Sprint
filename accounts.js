@@ -8,7 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const ENTRY_FEE = 50;
 
-function createAccounts(url, serviceKey) {
+function createAccounts(url, serviceKey, anonKey) {
   if (!url || !serviceKey) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY must be set (see .env.example)');
   }
@@ -50,6 +50,71 @@ function createAccounts(url, serviceKey) {
     const res = await db.from('accounts').select('pid').ilike('name', pattern).limit(1);
     if (res.error) throw new Error('username check failed: ' + res.error.message);
     return res.data.length === 0;
+  }
+
+  // ---------- REST authentication ----------
+  // Sign-up and login go through Supabase Auth with the ANON key, on a fresh client for every call. A client keeps
+  // the session of whoever signed in on it, so the privileged service-role client above must never be used for this.
+  // Failures throw an Error with a short .code that server.js turns into a status and a safe message.
+  function authClient() {
+    if (!anonKey) { const e = new Error('SUPABASE_ANON_KEY is not set'); e.code = 'not_configured'; throw e; }
+    return createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  }
+
+  function authError(error) {
+    const text = String((error && (error.code || error.message)) || '');
+    let code = 'auth_failed';
+    if (/invalid_credentials|invalid login/i.test(text)) code = 'invalid_credentials';
+    else if (/user_already_exists|already registered|already been registered/i.test(text)) code = 'email_taken';
+    else if (/weak_password|password/i.test(text) && !/invalid login/i.test(text)) code = 'weak_password';
+    else if (/rate_limit|rate limit|too many/i.test(text) || (error && error.status === 429)) code = 'rate_limited';
+    else if (/email_not_confirmed|not confirmed/i.test(text)) code = 'unconfirmed';
+    else if (/refresh_token|session_not_found|invalid.*token/i.test(text)) code = 'invalid_refresh';
+    const e = new Error('auth: ' + text);
+    e.code = code;
+    return e;
+  }
+
+  function sessionView(s) {
+    if (!s) return null;
+    return { accessToken: s.access_token, refreshToken: s.refresh_token, tokenType: 'Bearer', expiresIn: s.expires_in, expiresAt: s.expires_at };
+  }
+
+  function userView(u) {
+    const meta = (u && u.user_metadata) || {};
+    return { email: (u && u.email) || '', username: typeof meta.username === 'string' ? meta.username : '' };
+  }
+
+  // creates the login; the database trigger creates the game account (with the welcome coins) from the username.
+  // Resolves to { user, session } where session is null when the project needs the email confirmed first.
+  async function signUp(email, password, username) {
+    const res = await authClient().auth.signUp({ email: email, password: password, options: { data: { username: username } } });
+    if (res.error) {
+      const e = authError(res.error);
+      // "Database error saving new user" is what a username that was taken a moment ago looks like
+      if (e.code === 'auth_failed' && /database error/i.test(String(res.error.message)) && !(await usernameAvailable(username))) e.code = 'username_taken';
+      throw e;
+    }
+    return { user: userView(res.data.user), session: sessionView(res.data.session) };
+  }
+
+  async function signIn(email, password) {
+    const res = await authClient().auth.signInWithPassword({ email: email, password: password });
+    if (res.error) throw authError(res.error);
+    return { user: userView(res.data.user), session: sessionView(res.data.session) };
+  }
+
+  // trades a refresh token for a new session (refresh tokens are single-use: keep the new one)
+  async function refreshSession(refreshToken) {
+    const res = await authClient().auth.refreshSession({ refresh_token: refreshToken });
+    if (res.error || !res.data || !res.data.session) throw authError(res.error || { code: 'refresh_token_not_found' });
+    return { user: userView(res.data.user), session: sessionView(res.data.session) };
+  }
+
+  // revokes the login behind this access token everywhere, so its refresh token stops working too
+  async function signOut(accessToken) {
+    const res = await db.auth.admin.signOut(accessToken, 'global');
+    if (res.error && !/session_not_found|invalid/i.test(String(res.error.code || res.error.message))) throw authError(res.error);
   }
 
   function withFee(view) {
@@ -181,7 +246,7 @@ function createAccounts(url, serviceKey) {
   }
 
   return {
-    verifyToken: verifyToken, ledgerPage: ledgerPage, raceHistory: raceHistory, raceDetail: raceDetail, usernameAvailable: usernameAvailable, join: join, view: view,
+    verifyToken: verifyToken, signUp: signUp, signIn: signIn, refreshSession: refreshSession, signOut: signOut, ledgerPage: ledgerPage, raceHistory: raceHistory, raceDetail: raceDetail, usernameAvailable: usernameAvailable, join: join, view: view,
     recordRaceStats: recordRaceStats, playerStats: playerStats, leaderboard: leaderboard,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
     settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,
