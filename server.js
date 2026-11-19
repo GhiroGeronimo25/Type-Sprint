@@ -1196,7 +1196,7 @@ function onConnection(socket) {
     for (let i = 0; i < room.players.length; i++) {
       const p = room.players[i];
       if (p.id !== socket.id) continue;
-      if (!handleInput(room, p, (data || {}).input)) socket.emit('race:resync', { input: p.input });
+      if (!handleInput(room, p, (data || {}).input)) socket.emit('race:resync', { input: p.input, seq: (data || {}).seq });
     }
   }
 

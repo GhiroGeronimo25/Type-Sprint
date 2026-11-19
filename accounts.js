@@ -95,6 +95,13 @@ function createAccounts(url, serviceKey, anonKey) {
       if (e.code === 'auth_failed' && /database error/i.test(String(res.error.message)) && !(await usernameAvailable(username))) e.code = 'username_taken';
       throw e;
     }
+    // an email that is already registered comes back as a fake user with no identities: report it as taken
+    const made = res.data && res.data.user;
+    if (made && Array.isArray(made.identities) && made.identities.length === 0) {
+      const e = new Error('auth: user_already_exists');
+      e.code = 'email_taken';
+      throw e;
+    }
     return { user: userView(res.data.user), session: sessionView(res.data.session) };
   }
 

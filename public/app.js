@@ -75,6 +75,14 @@ async function onAuthSubmit(event) {
     if (!check.ok) return showAuthMessage(check.error || 'That username is not available.', true);
     const res = await supa.auth.signUp({ email: email, password: password, options: { data: { username: username } } });
     if (res.error) return showAuthMessage(friendlyAuthError(res.error), true);
+    // When an email is already registered, Supabase answers with a fake "new" user that has no identities (so it
+    // can't be used to find out who has an account). That is not a new account: say so instead of "check your email".
+    const created = res.data && res.data.user;
+    if (created && Array.isArray(created.identities) && created.identities.length === 0) {
+      setAuthMode('login');
+      $('authEmail').value = email;
+      return showAuthMessage('That email already has an account. Log in instead.', true);
+    }
     // with email confirmation switched on there is no session yet
     if (!res.data.session) {
       setAuthMode('login');
@@ -663,14 +671,18 @@ function onCountdown(data) {
   state.restore = '';
   state.result = null;
   composing = false;
+  composingLen = 0;
   pendingReset = null;
+  lastSent = '';
   $('typing').value = '';
   buildPassage();
 }
 
 // the server rejected our typing (for example a paste), so go back to its version
 function onResync(data) {
+  if (typeof data.seq === 'number' && data.seq !== inputSeq) return; // we have typed since: a newer message decides
   if (composing) { pendingReset = data.input; return; } // changing the box mid-word scrambles phone keyboards
+  lastSent = data.input;
   setTypingValue(data.input);
   updatePassage(data.input);
 }
@@ -770,6 +782,7 @@ function render() {
     $('typing').focus();
   }
   if (!canType) $('typing').disabled = true;
+  updateTapHint();
   if (me.entered) saveRecord(room, me, index + 1);
 }
 
@@ -888,12 +901,15 @@ function buildPassage() {
 }
 
 // ok = typed right, bad = typed wrong, cur = the next letter to type
-function updatePassage(input) {
+// wip = letters the phone keyboard is still building (not judged yet)
+function updatePassage(input, pending) {
+  pending = pending || 0;
   for (let i = 0; i < state.chars.length; i++) {
     let cls = '';
     if (i < input.length && input[i] === state.text[i]) cls = 'ok';
     else if (i < input.length) cls = 'bad';
-    else if (i === input.length) cls = 'cur';
+    else if (i < input.length + pending) cls = 'wip';
+    else if (i === input.length + pending) cls = 'cur';
     state.chars[i].className = cls;
   }
 }
@@ -922,7 +938,11 @@ function normalizeTyped(text) {
 }
 
 let composing = false;   // a phone keyboard is in the middle of building a word: never rewrite the box now
+let composingLen = 0;    // how many letters at the end of the box are still being built by the keyboard
 let pendingReset = null; // the server's version of the text, to apply once the word is finished
+let inputSeq = 0;        // numbers our messages so a late "go back" from the server can't undo newer typing
+let lastSent = '';       // what the server last heard from us
+const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 
 function setTypingValue(value) {
   const box = $('typing');
@@ -931,7 +951,11 @@ function setTypingValue(value) {
 }
 
 function onTyping() {
-  let value = normalizeTyped($('typing').value);
+  const raw = $('typing').value;
+  // Phone keyboards rewrite the word they are building (autocorrect, suggestions). Those letters are not final,
+  // so they are not marked wrong and not sent until the keyboard commits the word.
+  const pending = composing ? Math.min(composingLen, raw.length) : 0;
+  let value = normalizeTyped(raw.slice(0, raw.length - pending));
   const correct = commonPrefix(value, state.text);
   let wrong = 0;
   let trimmed = false;
@@ -943,24 +967,34 @@ function onTyping() {
     }
   }
   if (trimmed && !composing) setTypingValue(value);
-  updatePassage(value);
-  socket.emit('race:input', { input: value }); // the server decides what this is worth
+  updatePassage(value, trimmed ? 0 : pending);
+  if (value !== lastSent) { // nothing new to say while a word is only being rebuilt
+    lastSent = value;
+    socket.emit('race:input', { input: value, seq: ++inputSeq }); // the server decides what this is worth
+  }
 }
 
 function onCompositionStart() {
   composing = true;
+  composingLen = 0;
+}
+
+function onCompositionUpdate(event) {
+  composingLen = String(event.data || '').length;
 }
 
 function onCompositionEnd() {
   composing = false;
+  composingLen = 0;
   if (pendingReset !== null) { // the server rejected something while the word was being built
     const v = pendingReset;
     pendingReset = null;
+    lastSent = v;
     setTypingValue(v);
     updatePassage(v);
     return;
   }
-  onTyping(); // word finished: apply the mistake limit now
+  onTyping(); // word finished: judge it now
 }
 
 function blockEvent(event) {
@@ -971,12 +1005,43 @@ function refocus() {
   if (!$('typing').disabled && document.activeElement === document.body) $('typing').focus();
 }
 
+// Phones only open the keyboard when the player taps, so the passage is a big tap target and says so.
+function focusTyping() {
+  const box = $('typing');
+  if (box.disabled) return;
+  box.focus({ preventScroll: true });
+  keepPassageVisible();
+}
+
+function updateTapHint() {
+  const needsTap = isTouch && !$('typing').disabled && document.activeElement !== $('typing');
+  $('passage').classList.toggle('tap-to-type', needsTap);
+}
+
+let scrollTimer = null;
+function keepPassageVisible() { // the on-screen keyboard covers the bottom half: keep the passage above it
+  if (!isTouch || $('passage').hidden) return;
+  clearTimeout(scrollTimer);
+  scrollTimer = setTimeout(function () {
+    $('passage').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, 120);
+}
+
 $('typing').addEventListener('input', onTyping);
 $('typing').addEventListener('compositionstart', onCompositionStart);
+$('typing').addEventListener('compositionupdate', onCompositionUpdate);
 $('typing').addEventListener('compositionend', onCompositionEnd);
+$('typing').addEventListener('focus', function () { updateTapHint(); keepPassageVisible(); });
+$('typing').addEventListener('blur', function () { composing = false; composingLen = 0; updateTapHint(); });
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', function () {
+    if (document.activeElement === $('typing')) keepPassageVisible();
+  });
+}
+if (isTouch) $('hint').textContent = 'Tap the passage if the keyboard closes. Fix a mistake before you move on.';
 const blocked = ['paste', 'cut', 'drop'];
 for (let i = 0; i < blocked.length; i++) $('typing').addEventListener(blocked[i], blockEvent);
-$('passage').addEventListener('click', refocus);
+$('passage').addEventListener('click', focusTyping);
 document.addEventListener('keydown', refocus);
 
 // ---------- clock: countdown number and time left ----------
