@@ -857,3 +857,27 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   #boardTable td:nth-child(4)::after { content: " best WPM"; }
   #boardTable td:nth-child(5)::after { content: " wins / races"; }
 }
+
+/* ---------- Phones: Stats and Leaderboard, second pass ---------- */
+@media (max-width: 560px) {
+  /* saved races: the Clear button was overlapping the boxes under it */
+  .records-head { align-items: center; margin-bottom: 0.7rem; }
+  .records-head h2 { font-size: 1.3rem; }
+  .records-head .btn { min-height: 34px; padding: 0.2rem 0.8rem; font-size: 0.85rem; box-shadow: 2px 2px 0 var(--ink); }
+  .records .record-stats { margin-top: 0; }
+  .record-stats div { padding: 0.35rem 0.6rem; }
+  .record-stats span { white-space: nowrap; }
+  /* the account's race history is the real record: it goes above the browser-only "saved races" */
+  #home[data-tab="stats"] #raceHistory { order: 2; }
+  #home[data-tab="stats"] #records { order: 3; }
+  .statcard > .wallet-note { font-size: 0.8rem; line-height: 1.4; margin: 0 0 0.5rem; }
+
+  /* leaderboard: second line reads "Best 52 WPM" and "Won 0 / 3" and fits on one line */
+  #boardTable tr { grid-template-columns: 2rem 1fr 1fr auto; border-radius: 0; padding: 0.6rem 0.4rem; }
+  #boardTable tr.you { border-radius: 10px; }
+  #boardTable td:nth-child(4)::before { content: "Best "; }
+  #boardTable td:nth-child(4)::after { content: " WPM"; }
+  #boardTable td:nth-child(5)::before { content: "Won "; }
+  #boardTable td:nth-child(5)::after { content: ""; }
+  #boardTable td:nth-child(4), #boardTable td:nth-child(5) { white-space: nowrap; }
+}

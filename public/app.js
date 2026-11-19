@@ -420,7 +420,7 @@ function renderRecords() {
     if (list[i].finished && list[i].rank === 1) wins++;
   }
   $('recordBest').innerHTML = '<div><b>' + best + '</b><span>best WPM</span></div>' +
-    '<div><b>' + list.length + '</b><span>races saved</span></div>' +
+    '<div><b>' + list.length + '</b><span>races</span></div>' +
     '<div><b>' + wins + '</b><span>wins</span></div>';
   for (let i = 0; i < Math.min(list.length, 5); i++) {
     const r = list[i];
@@ -528,8 +528,8 @@ function renderStats(stats, board) {
   updateEmptyStates();
   if (hasStats) {
     $('statsSummary').innerHTML = '<div><b>' + stats.bestWpm + '</b><span>best WPM</span></div>' +
-      '<div><b>' + stats.avgWpm + '</b><span>average WPM</span></div>' +
-      '<div><b>' + stats.races + '</b><span>races counted</span></div>';
+      '<div><b>' + stats.avgWpm + '</b><span>avg WPM</span></div>' +
+      '<div><b>' + stats.races + '</b><span>races</span></div>';
     $('trendChart').innerHTML = trendSvg(stats.trend);
     let missed = '';
     stats.mostMissed.forEach(function (m) {
