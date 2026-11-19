@@ -1144,6 +1144,27 @@ startAuth();
   sync();
 })();
 
+// ---------- phones: the top menu slides away when you scroll down and comes back when you scroll up ----------
+(function () {
+  const nav = $('topnav');
+  const phone = window.matchMedia('(max-width: 760px)');
+  let lastY = window.scrollY;
+  let waiting = false;
+  function update() {
+    waiting = false;
+    const y = Math.max(0, window.scrollY);
+    if (!phone.matches || y < 40) {
+      nav.classList.remove('nav-hidden');
+    } else if (Math.abs(y - lastY) > 6) {
+      nav.classList.toggle('nav-hidden', y > lastY);
+    }
+    lastY = y;
+  }
+  window.addEventListener('scroll', function () {
+    if (!waiting) { waiting = true; requestAnimationFrame(update); }
+  }, { passive: true });
+})();
+
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape' && !$('resultOverlay').hidden && $('closeResult')) $('closeResult').click();
 });
