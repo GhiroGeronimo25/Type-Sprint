@@ -966,7 +966,18 @@ function showTyped(raw) { // phones: the box is invisible, so show what the keyb
   $('typed').textContent = 'Typed: ' + (shown.length > 26 ? '\u2026' + shown.slice(-26) : shown || '(nothing yet)');
 }
 
+// The box is only ever appended to or backspaced. If the phone moves the caret to the start, every new letter goes
+// in front of the others and the text comes out backwards ("eht" for "the"): put the caret back at the end.
+function caretToEnd() {
+  const box = $('typing');
+  const end = box.value.length;
+  try {
+    if (box.selectionStart !== end || box.selectionEnd !== end) box.setSelectionRange(end, end);
+  } catch (e) { /* not every browser allows it */ }
+}
+
 function onTyping() {
+  caretToEnd();
   const raw = $('typing').value;
   if (isTouch) showTyped(raw);
   let full = normalizeTyped(raw);
@@ -1048,7 +1059,9 @@ function keepPassageVisible() { // the on-screen keyboard covers the bottom half
 $('typing').addEventListener('input', onTyping);
 $('typing').addEventListener('compositionstart', onCompositionStart);
 $('typing').addEventListener('compositionend', onCompositionEnd);
-$('typing').addEventListener('focus', function () { updateTapHint(); keepPassageVisible(); });
+$('typing').addEventListener('focus', function () { caretToEnd(); updateTapHint(); keepPassageVisible(); });
+$('typing').addEventListener('select', caretToEnd);
+document.addEventListener('selectionchange', function () { if (document.activeElement === $('typing')) caretToEnd(); });
 $('typing').addEventListener('blur', function () { composing = false; updateTapHint(); });
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', function () {
