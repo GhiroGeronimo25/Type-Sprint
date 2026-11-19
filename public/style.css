@@ -364,7 +364,7 @@ input[type="text"]:focus { outline: none; background: #fff; box-shadow: 4px 4px 
 .passage .cur { background: var(--signal); color: var(--ink); border-radius: 4px; box-shadow: 0 3px 0 var(--ink); }
 .hint { color: #fff; font-weight: 600; font-size: 0.95rem; margin: 1.1rem 0 0; text-shadow: 1px 1px 0 var(--ink); }
 
-#typing { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+#typing { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; font-size: 16px; /* 16px or more stops iPhones zooming in when the box is focused */ }
 
 /* ---------- Toast ---------- */
 #toast {
@@ -692,3 +692,6 @@ body.has-nav main { padding-top: 1.5rem; }
   .seg.cols-3 { grid-template-columns: 1fr; }
   .start-split { grid-template-columns: 1fr; }
 }
+
+/* letters typed after a mistake look right but do not count until the mistake is fixed */
+#passage span.late { opacity: 0.5; }

@@ -662,13 +662,16 @@ function onCountdown(data) {
   state.offset = data.serverNow - Date.now();
   state.restore = '';
   state.result = null;
+  composing = false;
+  pendingReset = null;
   $('typing').value = '';
   buildPassage();
 }
 
 // the server rejected our typing (for example a paste), so go back to its version
 function onResync(data) {
-  $('typing').value = data.input;
+  if (composing) { pendingReset = data.input; return; } // changing the box mid-word scrambles phone keyboards
+  setTypingValue(data.input);
   updatePassage(data.input);
 }
 
@@ -886,25 +889,78 @@ function buildPassage() {
 
 // ok = typed right, bad = typed wrong, cur = the next letter to type
 function updatePassage(input) {
+  const correct = commonPrefix(input, state.text);
   for (let i = 0; i < state.chars.length; i++) {
     let cls = '';
-    if (i < input.length && input[i] === state.text[i]) cls = 'ok';
+    if (i < input.length && input[i] === state.text[i]) cls = i < correct ? 'ok' : 'ok late'; // late = typed after a mistake: not counted until it is fixed
     else if (i < input.length) cls = 'bad';
     else if (i === input.length) cls = 'cur';
     state.chars[i].className = cls;
   }
 }
 
+
 // ---------- typing ----------
+// how many letters from `from` on are wrong (letters that match don't count)
+function wrongAfter(input, text, from) {
+  let n = 0;
+  for (let i = from; i < input.length; i++) if (input[i] !== text[i]) n++;
+  return n;
+}
+
+const MAX_WRONG = 10; // same limit as the server
+
+// Phone keyboards swap plain characters for fancy ones (curly quotes, long dashes, odd spaces). The passage only
+// uses plain ones, so treat them as the plain character (the server does the same).
+function normalizeTyped(text) {
+  return String(text)
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, ' ');
+}
+
+let composing = false;   // a phone keyboard is in the middle of building a word: never rewrite the box now
+let pendingReset = null; // the server's version of the text, to apply once the word is finished
+
+function setTypingValue(value) {
+  const box = $('typing');
+  box.value = value;
+  try { box.setSelectionRange(value.length, value.length); } catch (e) { /* not every browser allows it */ }
+}
+
 function onTyping() {
-  let value = $('typing').value;
+  let value = normalizeTyped($('typing').value);
   const correct = commonPrefix(value, state.text);
-  if (value.length - correct > 10) { // stop piling up mistakes
-    value = value.slice(0, correct + 10);
-    $('typing').value = value;
+  let wrong = 0;
+  let trimmed = false;
+  for (let i = correct; i < value.length; i++) {
+    if (value[i] !== state.text[i] && ++wrong > MAX_WRONG) { // stop piling up mistakes
+      value = value.slice(0, i);
+      trimmed = true;
+      break;
+    }
   }
+  if (trimmed && !composing) setTypingValue(value);
   updatePassage(value);
   socket.emit('race:input', { input: value }); // the server decides what this is worth
+}
+
+function onCompositionStart() {
+  composing = true;
+}
+
+function onCompositionEnd() {
+  composing = false;
+  if (pendingReset !== null) { // the server rejected something while the word was being built
+    const v = pendingReset;
+    pendingReset = null;
+    setTypingValue(v);
+    updatePassage(v);
+    return;
+  }
+  onTyping(); // word finished: apply the mistake limit now
 }
 
 function blockEvent(event) {
@@ -916,6 +972,8 @@ function refocus() {
 }
 
 $('typing').addEventListener('input', onTyping);
+$('typing').addEventListener('compositionstart', onCompositionStart);
+$('typing').addEventListener('compositionend', onCompositionEnd);
 const blocked = ['paste', 'cut', 'drop'];
 for (let i = 0; i < blocked.length; i++) $('typing').addEventListener(blocked[i], blockEvent);
 $('passage').addEventListener('click', refocus);

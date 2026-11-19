@@ -16,6 +16,8 @@ const GRACE_MS = 120000;   // how long a disconnected player's seat is held for 
 const MAX_CPS = 25;        // fastest believable typing speed (characters per second); anything beyond is rejected and flagged
 const FLAG_WPM = 250;      // an average speed no human sustains: flagged (needs FLAG_MIN_LETTERS so a short burst can't trip it)
 const FLAG_MIN_LETTERS = 40;
+const MAX_JUMP = 20;      // most letters one message may add: phone keyboards insert a whole word at once (swipe typing, suggestions), a pasted passage is far longer
+const MAX_WRONG = 10;     // wrong letters a player may leave in the box before they have to backspace
 const RESERVE_MS = Number(process.env.RESERVE_MS) || 60000;         // how long a room made through the REST API waits for its host to connect
 const MATCH_JOIN_MS = Number(process.env.MATCH_JOIN_MS) || 15000;   // how long matched players have to connect to their room
 
@@ -261,6 +263,25 @@ function commonPrefix(a, b) {
   return i;
 }
 
+// How many letters after the first mistake are wrong. Letters that happen to match don't count, so one typo
+// followed by good typing is one mistake, not ten.
+function wrongAfter(input, text, from) {
+  let n = 0;
+  for (let i = from; i < input.length; i++) if (input[i] !== text[i]) n++;
+  return n;
+}
+
+// Phone keyboards swap plain characters for fancy ones (curly quotes, long dashes, odd spaces). Treat them as
+// the plain character the passage uses, so a player typing the right key is never marked wrong.
+function normalizeTyped(text) {
+  return String(text)
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, ' ');
+}
+
 function nameTaken(room, name) {
   for (let i = 0; i < room.players.length; i++) {
     if (room.players[i].name === name) return true;
@@ -360,15 +381,15 @@ function statsPayload(room) {
 function handleInput(room, p, input) {
   if (room.status !== 'racing' || !p.entered || p.finished || Date.now() < room.startAt) return true;
 
-  input = String(input || '').slice(0, room.text.length);
+  input = normalizeTyped(input || '').slice(0, room.text.length);
   const correct = commonPrefix(input, room.text);
   const seconds = (Date.now() - room.startAt) / 1000;
 
-  if (input.length - p.input.length > 4) {              // pasted text
+  if (input.length - p.input.length > MAX_JUMP) {       // pasted text (a whole word from a phone keyboard is fine)
     flag(p, 'paste', (input.length - p.input.length) + ' letters in one message');
     return false;
   }
-  if (input.length - correct > 10) return false;        // too many wrong letters
+  if (wrongAfter(input, room.text, correct) > MAX_WRONG) return false; // too many wrong letters
   if (correct > MAX_CPS * seconds + 5) {                // faster than a human
     flag(p, 'burst', correct + ' correct letters after ' + seconds.toFixed(1) + ' seconds');
     return false;
