@@ -613,11 +613,11 @@ body.has-nav main { padding-top: 1.5rem; }
   #home[data-tab="play"] { grid-template-columns: 1fr 1fr; }
   #home[data-tab="stats"], #home[data-tab="wallet"], #home[data-tab="board"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; align-items: start; }
   #home:not([data-tab="play"])::before { grid-column: 1 / -1; }
-  #home[data-tab="stats"] #myStats { grid-column: 1; }
-  #home[data-tab="stats"] #raceHistory { grid-column: 2; }
+  #home[data-tab="stats"] #myStats { grid-column: 1; grid-row: 2; }
+  #home[data-tab="stats"] #raceHistory { grid-column: 2; grid-row: 2; }
   #home[data-tab="stats"]:has(#myStats[hidden]) #raceHistory { grid-column: 1 / -1; }
   #home[data-tab="wallet"] #wallet, #home[data-tab="board"] #board,
-  #home[data-tab="stats"] .empty-tab { grid-column: 1 / -1; }
+  #home[data-tab="stats"] .empty-tab { grid-column: 1 / -1; grid-row: 2; }
 }
 .table-wrap, #boardTable { width: 100%; }
 
@@ -891,9 +891,11 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
 #raceList .place { font-weight: 800; color: var(--cobalt-deep); }
 #raceList .place.first { color: #0a8f62; }
 @media (min-width: 561px) {
-  /* desktop and tablets: numbers line up in columns, room and date underneath */
-  #raceList li { display: grid; grid-template-columns: 2.6rem 5rem 5.4rem 3.6rem 6rem 1fr; align-items: baseline; gap: 0.25rem 0.7rem; padding: 0.6rem 0.2rem; }
-  #raceList li > :nth-child(7) { grid-column: 1 / -1; font-size: 0.85rem; }
+  /* desktop and tablets: five numbers line up in columns; rating, then room and date, on a second line */
+  #raceList li { display: grid; grid-template-columns: 2.6rem 5rem 5.4rem 3.6rem minmax(0, 1fr); align-items: baseline; gap: 0.25rem 0.7rem; padding: 0.6rem 0.2rem; }
+  #raceList li > * { white-space: nowrap; min-width: 0; }
+  #raceList li > :nth-child(6) { grid-column: 1 / 4; font-size: 0.9rem; }
+  #raceList li > :nth-child(7) { grid-column: 4 / -1; font-size: 0.85rem; white-space: normal; text-align: right; }
 }
 @media (max-width: 560px) {
   /* phone: "89.8% acc" was wrapping; drop the word "acc" and keep every number on one line */
@@ -901,4 +903,12 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   #raceList li { grid-template-columns: 2.4rem 1fr 1fr 1fr; gap: 0.2rem 0.6rem; }
   #raceList li > * { white-space: nowrap; }
   #raceList li > :nth-child(7) { white-space: normal; }
+}
+
+/* ---------- Stats tab, single column (below the two-column desktop layout): numbers first, history after ---------- */
+@media (max-width: 999px) {
+  #home[data-tab="stats"] { display: flex; flex-direction: column; }
+  #home[data-tab="stats"]::before { order: 0; }
+  #home[data-tab="stats"] #myStats, #home[data-tab="stats"] .empty-tab { order: 1; }
+  #home[data-tab="stats"] #raceHistory { order: 2; }
 }
