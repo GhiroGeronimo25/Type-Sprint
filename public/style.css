@@ -794,3 +794,32 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   /* the numbers during a race: flat cards, no tilt */
   .stats div:nth-child(1), .stats div:nth-child(3) { transform: none; }
 }
+
+/* ---------- Phones: slim top menu and the Wallet tab ---------- */
+@media (max-width: 560px) {
+  /* row 1: logo, coins, Log out. row 2: the four tabs. (It was three rows and took a fifth of the screen.) */
+  .topnav-inner { flex-wrap: wrap; gap: 0.35rem 0.6rem; padding-top: 0.4rem; padding-bottom: 0.4rem; }
+  .brand { font-size: 1.35rem; }
+  .user-bar { margin-left: auto; gap: 0.5rem; }
+  .user-bar .btn.ghost { padding: 0.25rem 0.7rem; font-size: 0.85rem; min-height: 36px; box-shadow: 2px 2px 0 var(--cobalt); }
+  .user-bar .chip { font-size: 0.85rem; padding: 0.1rem 0.65rem; }
+  .tabs { margin-top: 0.1rem; }
+  .navtab { min-height: 38px; }
+
+  /* wallet: the page title already says "Wallet" */
+  .wallet > h2 { display: none; }
+  .wallet .record-stats { margin: 0 0 0.8rem; }
+  .wallet .wallet-note { font-size: 0.8rem; line-height: 1.4; margin-bottom: 0.6rem; }
+  .wallet-head { margin: 0.8rem 0 0.3rem; }
+  .wallet-head h3 { font-size: 1.05rem; }
+  .filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; width: 100%; gap: 0.35rem; }
+  .filters .chipbtn { padding: 0.3rem 0.65rem; font-size: 0.8rem; min-height: 38px; white-space: nowrap; flex: 0 0 auto; }
+
+  /* each transaction: amount, what, balance on one line; the date small underneath */
+  .ledger li { display: grid; grid-template-columns: 4rem 1fr auto; align-items: baseline; gap: 0.1rem 0.6rem; padding: 0.6rem 0.1rem; }
+  .ledger .tx { min-width: 0; font-size: 1.1rem; }
+  .ledger .what { min-width: 0; }
+  .ledger .bal { font-size: 0.85rem; white-space: nowrap; }
+  .ledger .when { grid-column: 1 / -1; margin-left: 0; font-size: 0.75rem; }
+  #ledgerMore, #raceMore { width: 100%; margin-top: 0.6rem; }
+}

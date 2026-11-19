@@ -640,7 +640,7 @@ function renderWallet() {
   }
   $('walletChip').innerHTML = Number(a.coins) + ' coins<span class="chip-rating"> \u00b7 rating ' + Number(a.rating) + '</span>';
   $('coinPill').hidden = false;
-  $('coinPill').textContent = a.coins + ' coins \u00b7 ' + a.rating;
+  $('coinPill').innerHTML = Number(a.coins) + ' coins<span class="chip-rating"> \u00b7 ' + Number(a.rating) + '</span>';
   refreshChip();
 }
 
