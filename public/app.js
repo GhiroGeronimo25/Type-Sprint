@@ -671,9 +671,9 @@ function onCountdown(data) {
   state.restore = '';
   state.result = null;
   composing = false;
-  composingLen = 0;
   pendingReset = null;
   lastSent = '';
+  $('typed').textContent = 'Typed: (nothing yet)';
   $('typing').value = '';
   buildPassage();
 }
@@ -938,7 +938,6 @@ function normalizeTyped(text) {
 }
 
 let composing = false;   // a phone keyboard is in the middle of building a word: never rewrite the box now
-let composingLen = 0;    // how many letters at the end of the box are still being built by the keyboard
 let pendingReset = null; // the server's version of the text, to apply once the word is finished
 let inputSeq = 0;        // numbers our messages so a late "go back" from the server can't undo newer typing
 let lastSent = '';       // what the server last heard from us
@@ -950,12 +949,36 @@ function setTypingValue(value) {
   try { box.setSelectionRange(value.length, value.length); } catch (e) { /* not every browser allows it */ }
 }
 
+// A stray key at the very start (for example tapped while the keyboard slides up) pushes every later letter one
+// place out, so correct typing looks wrong. If dropping 1-3 leading keys makes what was typed match the start of
+// the passage, drop them.
+function dropStrayStart(value) {
+  if (value.length < 4 || value[0] === state.text[0]) return value;
+  for (let j = 1; j <= 3; j++) {
+    const rest = value.slice(j);
+    if (rest.length >= 3 && commonPrefix(rest, state.text) === rest.length) return rest;
+  }
+  return value;
+}
+
+function showTyped(raw) { // phones: the box is invisible, so show what the keyboard really entered
+  const shown = String(raw).replace(/ /g, '\u00b7');
+  $('typed').textContent = 'Typed: ' + (shown.length > 26 ? '\u2026' + shown.slice(-26) : shown || '(nothing yet)');
+}
+
 function onTyping() {
   const raw = $('typing').value;
-  // Phone keyboards rewrite the word they are building (autocorrect, suggestions). Those letters are not final,
-  // so they are not marked wrong and not sent until the keyboard commits the word.
-  const pending = composing ? Math.min(composingLen, raw.length) : 0;
-  let value = normalizeTyped(raw.slice(0, raw.length - pending));
+  if (isTouch) showTyped(raw);
+  let full = normalizeTyped(raw);
+  // Phone keyboards rewrite the word they are building (autocorrect, suggestions). That word is not final, so it
+  // is not marked wrong and not sent until the keyboard commits it (space, punctuation or finishing the word).
+  let pending = 0;
+  if (composing) pending = full.length - (full.lastIndexOf(' ') + 1);
+  let value = full.slice(0, full.length - pending);
+  if (!composing) {
+    const healed = dropStrayStart(value);
+    if (healed !== value) { value = healed; setTypingValue(value); }
+  }
   const correct = commonPrefix(value, state.text);
   let wrong = 0;
   let trimmed = false;
@@ -976,16 +999,10 @@ function onTyping() {
 
 function onCompositionStart() {
   composing = true;
-  composingLen = 0;
-}
-
-function onCompositionUpdate(event) {
-  composingLen = String(event.data || '').length;
 }
 
 function onCompositionEnd() {
   composing = false;
-  composingLen = 0;
   if (pendingReset !== null) { // the server rejected something while the word was being built
     const v = pendingReset;
     pendingReset = null;
@@ -1016,6 +1033,7 @@ function focusTyping() {
 function updateTapHint() {
   const needsTap = isTouch && !$('typing').disabled && document.activeElement !== $('typing');
   $('passage').classList.toggle('tap-to-type', needsTap);
+  $('typed').hidden = !(isTouch && !$('typing').disabled);
 }
 
 let scrollTimer = null;
@@ -1029,10 +1047,9 @@ function keepPassageVisible() { // the on-screen keyboard covers the bottom half
 
 $('typing').addEventListener('input', onTyping);
 $('typing').addEventListener('compositionstart', onCompositionStart);
-$('typing').addEventListener('compositionupdate', onCompositionUpdate);
 $('typing').addEventListener('compositionend', onCompositionEnd);
 $('typing').addEventListener('focus', function () { updateTapHint(); keepPassageVisible(); });
-$('typing').addEventListener('blur', function () { composing = false; composingLen = 0; updateTapHint(); });
+$('typing').addEventListener('blur', function () { composing = false; updateTapHint(); });
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', function () {
     if (document.activeElement === $('typing')) keepPassageVisible();

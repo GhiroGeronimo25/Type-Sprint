@@ -764,3 +764,16 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   .stats b { font-size: 1.35rem; }
   .passage { font-size: 1.1rem; }
 }
+
+/* what the keyboard really entered (phones only; the real box is invisible) */
+.typed { margin: 0.5rem 0 0; padding: 0.4rem 0.7rem; background: var(--ink); color: #fff; border-radius: 8px; font: 600 0.95rem/1.3 ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 560px) {
+  /* the room bar was sticky and wrapped to four lines: it ate 40% of the screen. One short row, not sticky. */
+  .bar { position: static; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.4rem 0.5rem; margin: 0 0 0.6rem; padding: 0; }
+  .bar .code { justify-self: start; transform: none; padding: 0.2rem 0.7rem; }
+  .bar .code strong { font-size: 1.3rem; }
+  .bar .status { grid-column: 1 / -1; grid-row: 2; font-size: 0.9rem; line-height: 1.25; }
+  .bar #walletChip { grid-row: 1; grid-column: 3; justify-self: end; }
+  .bar #leave { display: none; } /* same as the Lobby button */
+}
