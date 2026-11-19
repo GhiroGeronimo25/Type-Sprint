@@ -215,7 +215,7 @@ function setTab(tab, pushHash) {
 
 function updateEmptyStates() {
   // friendly messages when a tab would otherwise be blank
-  $('statsEmpty').hidden = currentTab !== 'stats' || !$('records').hidden || !$('raceHistory').hidden || !$('myStats').hidden;
+  $('statsEmpty').hidden = currentTab !== 'stats' || !$('raceHistory').hidden || !$('myStats').hidden;
   $('boardEmpty').hidden = currentTab !== 'board' || !$('board').hidden;
 }
 
@@ -247,7 +247,6 @@ function goHome() {
   $('typing').disabled = true;
   history.replaceState(null, '', location.pathname + '#play');
   showScreen('home');
-  renderRecords();
   loadStats();
 }
 
@@ -377,85 +376,81 @@ $('leave').addEventListener('click', leaveRoom);
 $('backHome').addEventListener('click', leaveRoom);
 $('copyLink').addEventListener('click', copyLink);
 
-// ---------- saved races (kept in this browser) ----------
-function loadRecords() {
-  try {
-    return JSON.parse(localStorage.getItem('records')) || [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function saveRecord(room, me, rank) {
-  if (room.status !== 'finished' || (!me.finished && me.wpm === 0)) return;
-  const id = room.code + ':' + room.startAt;
-  const list = loadRecords();
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].id === id) return;
-  }
-  list.unshift({
-    id: id,
-    date: Date.now(),
-    rank: rank,
-    players: room.players.length,
-    wpm: me.wpm,
-    accuracy: me.accuracy,
-    finished: me.finished,
-    progress: me.progress,
-    seconds: me.finished ? me.finishMs / 1000 : null,
-  });
-  localStorage.setItem('records', JSON.stringify(list.slice(0, 30)));
-}
-
-function renderRecords() {
-  const list = loadRecords();
-  $('records').hidden = list.length === 0;
-  updateEmptyStates();
-  if (!list.length) return;
-  let best = 0;
-  let wins = 0;
-  let html = '';
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].wpm > best) best = list[i].wpm;
-    if (list[i].finished && list[i].rank === 1) wins++;
-  }
-  $('recordBest').innerHTML = '<div><b>' + best + '</b><span>best WPM</span></div>' +
-    '<div><b>' + list.length + '</b><span>races</span></div>' +
-    '<div><b>' + wins + '</b><span>wins</span></div>';
-  for (let i = 0; i < Math.min(list.length, 5); i++) {
-    const r = list[i];
-    const when = new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    const result = r.finished ? (r.seconds.toFixed(1) + 's') : (Math.round(r.progress * 100) + '% done');
-    html += '<li><span class="rr">' + ordinal(r.rank) + '</span><b>' + r.wpm + '</b> wpm' +
-      '<span>' + r.accuracy + '% acc</span><span>' + result + '</span><span class="when">' + when + '</span></li>';
-  }
-  $('recordList').innerHTML = html;
-}
-
-function clearRecords() {
-  localStorage.removeItem('records');
-  renderRecords();
-}
-
-$('clearRecords').addEventListener('click', clearRecords);
-renderRecords();
+// The old browser-only "saved races" list is gone: race history lives on the account. Tidy up what it left behind.
+try { localStorage.removeItem('records'); } catch (e) { /* storage can be blocked */ }
 
 // ---------- stats and leaderboard (kept on the server) ----------
 // ---------- race history (REST API: GET /api/races) ----------
 const races_ = { items: [], hasMore: false, loading: false };
 
+// Casual and practice races change no coins or rating, so the server does not keep them. This browser does, and
+// they are merged into the race history below (ranked races come from the account).
+const LOCAL_RACES_KEY = 'casualRaces';
+
+function loadLocalRaces() {
+  try {
+    const list = JSON.parse(localStorage.getItem(LOCAL_RACES_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveLocalRace(room, me, rank) {
+  if (room.status !== 'finished' || !me.entered) return;
+  if (room.ranked && room.players.length > 1) return; // real ranked races are saved on the account
+  if (!me.finished && me.wpm === 0) return;
+  const id = room.code + ':' + room.startAt;
+  const list = loadLocalRaces();
+  if (list.some(function (r) { return r.id === id; })) return;
+  list.unshift({
+    id: id, endedAt: new Date().toISOString(), room: room.code, rank: rank,
+    wpm: me.wpm, accuracy: me.accuracy, finished: me.finished, progress: me.progress,
+    seconds: me.finished ? Math.round(me.finishMs / 100) / 10 : null,
+    kind: room.players.length === 1 ? 'Practice' : 'Casual',
+  });
+  try { localStorage.setItem(LOCAL_RACES_KEY, JSON.stringify(list.slice(0, 30))); } catch (e) { /* storage can be blocked */ }
+  renderRaceHistory();
+}
+
+// the account's ranked races plus this browser's casual and practice races, newest first
+function mergedRaces() {
+  const server = races_.items;
+  const oldest = server.length ? Date.parse(server[server.length - 1].endedAt) : Infinity;
+  const local = loadLocalRaces().filter(function (l) {
+    const t = Date.parse(l.endedAt);
+    if (races_.hasMore && t < oldest) return false; // older than the page on screen: shows up after "Show more"
+    return !server.some(function (r) { // a ranked practice run the server already lists
+      return r.room === l.room && Math.abs(Date.parse(r.endedAt) - t) < 5 * 60 * 1000;
+    });
+  }).map(function (l) { return Object.assign({}, l, { local: true }); });
+  return server.concat(local).sort(function (a, b) { return Date.parse(b.endedAt) - Date.parse(a.endedAt); });
+}
+
 function renderRaceHistory() {
-  $('raceHistory').hidden = races_.items.length === 0;
+  const items = mergedRaces();
+  $('raceHistory').hidden = items.length === 0;
   updateEmptyStates();
   let html = '';
-  for (let i = 0; i < races_.items.length; i++) {
-    const r = races_.items[i];
+  for (let i = 0; i < items.length; i++) {
+    const r = items[i];
     const when = new Date(r.endedAt).toLocaleString(undefined, ledgerTime);
+    const time = r.seconds === null ? 'DNF' : r.seconds + 's';
+    if (r.local) {
+      html += '<li><span class="place">' + (r.kind === 'Practice' ? '\u2014' : ordinal(r.rank)) + '</span>' +
+        '<span><b>' + r.wpm + '</b> wpm</span>' +
+        '<span>' + r.accuracy + '% acc</span>' +
+        '<span>' + time + '</span>' +
+        '<span class="tag">' + r.kind + '</span>' +
+        '<span class="muted">no coins or rating</span>' +
+        '<span class="muted">' + esc(r.room) + ' \u00b7 ' + when + '</span></li>';
+      continue;
+    }
     const coins = r.net === 0 ? '0' : signed(r.net);
     html += '<li><span class="place' + (r.rank === 1 ? ' first' : '') + '">' + ordinal(r.rank) + '</span>' +
       '<span><b>' + r.wpm + '</b> wpm</span>' +
       '<span>' + r.accuracy + '% acc</span>' +
-      '<span>' + (r.seconds === null ? 'DNF' : r.seconds + 's') + '</span>' +
+      '<span>' + time + '</span>' +
       '<span class="' + (r.net < 0 ? 'out' : 'in') + '">' + coins + ' coins</span>' +
       '<span>rating ' + r.ratingBefore + ' \u2192 ' + r.ratingAfter + '</span>' +
       '<span class="muted">' + esc(r.room) + ' \u00b7 ' + when + '</span></li>';
@@ -779,6 +774,7 @@ function render() {
 
   renderLanes(room);
   renderPanel(room, me, index + 1);
+  saveLocalRace(room, me, index + 1);
 
   // you can only type while the race is on and you haven't finished
   const canType = room.status === 'racing' && me.entered && !me.finished;
@@ -792,7 +788,6 @@ function render() {
   }
   if (!canType) $('typing').disabled = true;
   updateTapHint();
-  if (me.entered) saveRecord(room, me, index + 1);
 }
 
 function renderLanes(room) {

@@ -770,7 +770,7 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   #home[data-tab="stats"] { display: flex; flex-direction: column; }
   #home[data-tab="stats"]::before { order: 0; }
   #home[data-tab="stats"] #myStats, #home[data-tab="stats"] .empty-tab { order: 1; }
-  #home[data-tab="stats"] #raceHistory, #home[data-tab="stats"] #records { order: 2; }
+  #home[data-tab="stats"] #raceHistory { order: 2; }
   .statcard > h2 { display: none; } /* the page title above already says "Your stats" / "Leaderboard" */
 
   .statcard { padding: 1rem; }
@@ -869,7 +869,6 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   .record-stats span { white-space: nowrap; }
   /* the account's race history is the real record: it goes above the browser-only "saved races" */
   #home[data-tab="stats"] #raceHistory { order: 2; }
-  #home[data-tab="stats"] #records { order: 3; }
   .statcard > .wallet-note { font-size: 0.8rem; line-height: 1.4; margin: 0 0 0.5rem; }
 
   /* leaderboard: second line reads "Best 52 WPM" and "Won 0 / 3" and fits on one line */
@@ -881,3 +880,6 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   #boardTable td:nth-child(5)::after { content: ""; }
   #boardTable td:nth-child(4), #boardTable td:nth-child(5) { white-space: nowrap; }
 }
+
+/* casual / practice rows in the race history */
+.record-list .tag { justify-self: start; background: var(--ink); color: var(--signal); border-radius: 999px; padding: 0.05rem 0.65rem; font-size: 0.8rem; font-weight: 800; }
