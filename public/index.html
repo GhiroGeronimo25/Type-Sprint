@@ -180,6 +180,7 @@
     <!-- Room -->
     <section id="room" class="screen" hidden>
       <header class="bar">
+        <button id="toLobby" class="btn ghost back" type="button" aria-label="Back to the room lobby" hidden>← Lobby</button>
         <button id="copyLink" class="code" type="button" title="Copy invite link">
           <span class="muted">Room</span> <strong id="roomCode">----</strong>
         </button>
@@ -187,6 +188,8 @@
         <span id="walletChip" class="chip" hidden></span>
         <button id="leave" class="btn ghost" type="button">Leave room</button>
       </header>
+
+      <div id="countOverlay" class="count-overlay" aria-live="polite" hidden><div id="count" class="count">3</div></div>
 
       <section id="lanes" class="lanes" aria-label="Live leaderboard"></section>
 
@@ -211,6 +214,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=26"></script>
+  <script src="app.js?v=27"></script>
 </body>
 </html>
