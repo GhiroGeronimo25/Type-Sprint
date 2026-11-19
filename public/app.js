@@ -148,7 +148,7 @@ async function startAuth() {
 }
 
 // what the screen remembers between server updates
-const state = { account: null, result: null, room: null, text: '', startAt: 0, limitMs: 60000, offset: 0, chars: [], restore: '' };
+const state = { account: null, result: null, room: null, text: '', startAt: 0, limitMs: 60000, offset: 0, chars: [], restore: '', resultDismissed: false };
 
 // ---------- helpers ----------
 function esc(text) {
@@ -883,9 +883,29 @@ function renderPanel(room, me, rank) {
     else html += '<p>Waiting for the host to start another race.</p>';
   }
 
-  $('panel').innerHTML = html;
+  const finished = room.status === 'finished';
+  if (!finished) state.resultDismissed = false;
+  if (finished) {
+    html += '<button id="closeResult" class="btn ghost result-close" type="button">Close</button>';
+    $('resultCard').innerHTML = html;
+    $('resultOverlay').hidden = state.resultDismissed;
+    $('panel').innerHTML = state.resultDismissed
+      ? '<button id="showResult" class="btn" type="button">Show results</button>' : '';
+    if ($('showResult')) $('showResult').addEventListener('click', function () {
+      state.resultDismissed = false;
+      renderPanel(room, me, rank);
+    });
+    if ($('closeResult')) $('closeResult').addEventListener('click', function () {
+      state.resultDismissed = true;
+      renderPanel(room, me, rank);
+    });
+  } else {
+    $('resultOverlay').hidden = true;
+    $('resultCard').innerHTML = '';
+    $('panel').innerHTML = html;
+  }
   if ($('start')) $('start').addEventListener('click', startRace);
-  document.querySelectorAll('#panel [data-difficulty]').forEach(function (button) {
+  document.querySelectorAll('#panel [data-difficulty], #resultCard [data-difficulty]').forEach(function (button) {
     button.addEventListener('click', function () {
       socket.emit('room:difficulty', { difficulty: button.getAttribute('data-difficulty') });
     });
@@ -1131,3 +1151,7 @@ startAuth();
     if (!waiting) { waiting = true; requestAnimationFrame(update); }
   }, { passive: true });
 })();
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && !$('resultOverlay').hidden && $('closeResult')) $('closeResult').click();
+});

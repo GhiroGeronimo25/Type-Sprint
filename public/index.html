@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=34">
+  <link rel="stylesheet" href="style.css?v=35">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -191,6 +191,10 @@
 
       <div id="countOverlay" class="count-overlay" aria-live="polite" hidden><div id="count" class="count">3</div></div>
 
+      <div id="resultOverlay" class="result-overlay" role="dialog" aria-modal="true" aria-label="Race results" hidden>
+        <div id="resultCard" class="panel result-card"></div>
+      </div>
+
       <section id="lanes" class="lanes" aria-label="Live leaderboard"></section>
 
       <section class="stage">
@@ -214,6 +218,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=27"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>
