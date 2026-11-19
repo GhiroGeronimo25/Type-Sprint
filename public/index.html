@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=27">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -127,12 +127,6 @@
         <button id="ledgerMore" class="btn ghost" type="button" hidden>Show more</button>
       </section>
 
-      <ol class="steps" data-pane="play">
-        <li>Create a room and share the four-letter code.</li>
-        <li>Friends join from the link or the code.</li>
-        <li>The host starts the race. Everyone types the same passage.</li>
-      </ol>
-
       <!-- Live lobby: rooms anyone can join right now -->
       <section id="lobby" class="lobby" data-pane="play">
         <div class="lobby-head">
@@ -228,6 +222,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-  <script src="app.js?v=17"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>
