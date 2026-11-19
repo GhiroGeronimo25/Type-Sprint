@@ -506,7 +506,9 @@ function sendAccount(p) {
 // Casual: free for everyone, no pot, no coins or rating change, and no database calls.
 async function startRace(room) {
   let entered;
-  if (!room.ranked) {
+  // Racing alone is practice: it is free, so no fee is taken, nothing is paid out and the rating stays put.
+  room.paid = room.ranked && room.players.length > 1;
+  if (!room.paid) {
     entered = room.players.map(function (p) { return p.pid; });
   } else {
     room.starting = true; // blocks a second start (and new joiners) while the fees are being collected
@@ -540,12 +542,12 @@ async function startRace(room) {
   room.text = passages.pick(room.difficulty, room.text); // the server chooses: from the room's difficulty, never the same passage twice in a row
   room.status = 'countdown';
   room.startAt = Date.now() + COUNTDOWN_MS;
-  room.pot = room.ranked ? entered.length * ENTRY_FEE : 0;
+  room.pot = room.paid ? entered.length * ENTRY_FEE : 0;
   for (let i = 0; i < room.players.length; i++) {
     const p = room.players[i];
     resetPlayer(p);
     if (entered.indexOf(p.pid) >= 0) {
-      if (room.ranked && p.away) p.forfeited = true; // already disconnected: paid in, but out of the race
+      if (room.paid && p.away) p.forfeited = true; // already disconnected: paid in, but out of the race
       else p.entered = true;
     } else {
       io.to(p.id).emit('race:notice', { message: 'You need ' + ENTRY_FEE + ' coins to enter. You are watching this one.' });
@@ -585,7 +587,7 @@ function beginRacing(room) {
 
 // pay prizes and update ratings, once per race
 async function settleRace(room) {
-  if (!room.ranked) return; // casual races pay nothing and change no ratings
+  if (!room.paid) return; // casual and practice races pay nothing and change no ratings
   const ranked = room.players.filter(function (p) { return p.entered; });
   if (ranked.length === 0) {
     // everyone who paid disconnected or left: there is nobody to pay, so the race is cancelled and every fee goes back
@@ -637,14 +639,14 @@ function endRace(room) {
   }
   const stats = statsPayload(room);
   if (stats.length > 0) { // saved for every race, ranked or casual; a flagged race will not count towards anyone's stats
-    accounts.recordRaceStats(room.code, room.ranked, room.difficulty, stats).catch(logError('Could not save race stats'));
+    accounts.recordRaceStats(room.code, room.paid, room.difficulty, stats).catch(logError('Could not save race stats'));
   }
   room.players.sort(byRank);
   broadcast(room);
   room.settling = true; // the payout is in flight: no new race until it is done
   settleRace(room).catch(logError('Could not settle race ' + room.code)).then(function () {
     room.settling = false;
-    if (!room.ranked) recordRace(room); // ranked results were saved inside the payout transaction
+    if (!room.paid) recordRace(room); // ranked results were saved inside the payout transaction
     broadcast(room);
   });
 }
@@ -704,7 +706,7 @@ function removePlayer(room, p) {
   clearTimeout(p.awayTimer);
   const i = room.players.indexOf(p);
   if (i >= 0) room.players.splice(i, 1);
-  if (room.ranked && room.status === 'countdown' && p.entered) { // race hasn't begun: give the fee back
+  if (room.paid && room.status === 'countdown' && p.entered) { // race hasn't begun: give the fee back
     p.entered = false;
     room.pot = Math.max(0, (room.pot || 0) - ENTRY_FEE);
     accounts.refundEntry(room.code, p.pid).then(function () {
@@ -717,7 +719,7 @@ function removePlayer(room, p) {
     clearTimeout(room.endTimer);
     delete rooms[room.code];
     scheduleLobby();
-    if (room.ranked && (room.status === 'countdown' || room.status === 'racing')) { // everyone left mid-race: return what is still in the pot
+    if (room.paid && (room.status === 'countdown' || room.status === 'racing')) { // everyone left mid-race: return what is still in the pot
       accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
     }
     return;
@@ -749,7 +751,7 @@ function dropConnection(socket) {
   }, GRACE_MS);
   // Ranked: once the fee is in the pot, a disconnect forfeits it. The racer is out of this race (they can come
   // back to watch), and their fee stays in the pot for the racers who stay.
-  if (room.ranked && p.entered && (room.status === 'countdown' || room.status === 'racing')) {
+  if (room.paid && p.entered && (room.status === 'countdown' || room.status === 'racing')) {
     p.entered = false;
     p.forfeited = true;
   }
