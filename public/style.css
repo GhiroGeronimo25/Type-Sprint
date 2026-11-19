@@ -613,7 +613,9 @@ body.has-nav main { padding-top: 1.5rem; }
   #home[data-tab="play"] { grid-template-columns: 1fr 1fr; }
   #home[data-tab="stats"], #home[data-tab="wallet"], #home[data-tab="board"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; align-items: start; }
   #home:not([data-tab="play"])::before { grid-column: 1 / -1; }
-  #home[data-tab="stats"] #myStats, #home[data-tab="stats"] #raceHistory,
+  #home[data-tab="stats"] #myStats { grid-column: 1; }
+  #home[data-tab="stats"] #raceHistory { grid-column: 2; }
+  #home[data-tab="stats"]:has(#myStats[hidden]) #raceHistory { grid-column: 1 / -1; }
   #home[data-tab="wallet"] #wallet, #home[data-tab="board"] #board,
   #home[data-tab="stats"] .empty-tab { grid-column: 1 / -1; }
 }
@@ -883,3 +885,20 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
 
 /* casual / practice rows in the race history */
 .record-list .tag { justify-self: start; background: var(--ink); color: var(--signal); border-radius: 999px; padding: 0.05rem 0.65rem; font-size: 0.8rem; font-weight: 800; }
+
+/* ---------- Race history rows ---------- */
+.record-list #raceList b, #raceList b { margin-right: 0; } /* the negative margin made "52 wpm" run together */
+#raceList .place { font-weight: 800; color: var(--cobalt-deep); }
+#raceList .place.first { color: #0a8f62; }
+@media (min-width: 561px) {
+  /* desktop and tablets: numbers line up in columns, room and date underneath */
+  #raceList li { display: grid; grid-template-columns: 2.6rem 5rem 5.4rem 3.6rem 6rem 1fr; align-items: baseline; gap: 0.25rem 0.7rem; padding: 0.6rem 0.2rem; }
+  #raceList li > :nth-child(7) { grid-column: 1 / -1; font-size: 0.85rem; }
+}
+@media (max-width: 560px) {
+  /* phone: "89.8% acc" was wrapping; drop the word "acc" and keep every number on one line */
+  #raceList .lbl { display: none; }
+  #raceList li { grid-template-columns: 2.4rem 1fr 1fr 1fr; gap: 0.2rem 0.6rem; }
+  #raceList li > * { white-space: nowrap; }
+  #raceList li > :nth-child(7) { white-space: normal; }
+}

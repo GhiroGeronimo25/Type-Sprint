@@ -439,7 +439,7 @@ function renderRaceHistory() {
     if (r.local) {
       html += '<li><span class="place">' + (r.kind === 'Practice' ? '\u2014' : ordinal(r.rank)) + '</span>' +
         '<span><b>' + r.wpm + '</b> wpm</span>' +
-        '<span>' + r.accuracy + '% acc</span>' +
+        '<span>' + r.accuracy + '%<span class="lbl"> acc</span></span>' +
         '<span>' + time + '</span>' +
         '<span class="tag">' + r.kind + '</span>' +
         '<span class="muted">no coins or rating</span>' +
@@ -449,7 +449,7 @@ function renderRaceHistory() {
     const coins = r.net === 0 ? '0' : signed(r.net);
     html += '<li><span class="place' + (r.rank === 1 ? ' first' : '') + '">' + ordinal(r.rank) + '</span>' +
       '<span><b>' + r.wpm + '</b> wpm</span>' +
-      '<span>' + r.accuracy + '% acc</span>' +
+      '<span>' + r.accuracy + '%<span class="lbl"> acc</span></span>' +
       '<span>' + time + '</span>' +
       '<span class="' + (r.net < 0 ? 'out' : 'in') + '">' + coins + ' coins</span>' +
       '<span>rating ' + r.ratingBefore + ' \u2192 ' + r.ratingAfter + '</span>' +
