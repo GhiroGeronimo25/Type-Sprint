@@ -563,7 +563,9 @@ async function startRace(room) {
     limitMs: RACE_MS,
   });
   broadcast(room);
+  const startAt = room.startAt;
   setTimeout(function () {
+    if (room.status !== 'countdown' || room.startAt !== startAt) return; // sent back to the lobby meanwhile
     beginRacing(room);
   }, COUNTDOWN_MS);
   return '';
@@ -1192,6 +1194,24 @@ function onConnection(socket) {
     if (error) socket.emit('race:notice', { message: error });
   }
 
+  // Back to the room's waiting lobby. Only the host, and only when nobody can lose a fee:
+  // once the race is over, or while racing alone (practice).
+  function onToLobby() {
+    const room = rooms[socket.data.code];
+    if (!room || room.hostId !== socket.id) return;
+    if (room.starting || room.settling) return;
+    const practice = !room.paid && room.players.length === 1;
+    if (!(room.status === 'finished' || (practice && (room.status === 'countdown' || room.status === 'racing')))) return;
+    clearInterval(room.tickTimer);
+    clearTimeout(room.endTimer);
+    room.status = 'lobby';
+    room.startAt = 0;
+    room.pot = 0;
+    room.paid = false;
+    room.players.forEach(resetPlayer);
+    broadcast(room);
+  }
+
   function onInput(data) {
     const room = rooms[socket.data.code];
     if (!room) return;
@@ -1277,6 +1297,7 @@ function onConnection(socket) {
   socket.on('room:create', function (data, ack) { onCreate(data, ack).catch(logError('room:create')); });
   socket.on('room:join', function (data, ack) { onJoin(data, ack).catch(logError('room:join')); });
   socket.on('race:start', function () { onStart().catch(logError('race:start')); });
+  socket.on('room:lobby', onToLobby);
   socket.on('race:input', onInput);
   socket.on('room:rejoin', onRejoin);
   socket.on('room:leave', onLeave);
