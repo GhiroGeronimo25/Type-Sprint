@@ -840,7 +840,7 @@ function renderPanel(room, me, rank) {
   if (room.status === 'lobby') {
     html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2><p>Share the code <strong>' + room.code +
       '</strong> or click it above to copy an invite link. ' + (room.ranked
-        ? 'Ranked: entry is ' + room.fee + ' coins per racer and your rating changes. Leaving once the race has started forfeits your fee. Starting alone is practice: your fee comes back.'
+        ? 'Ranked: entry is ' + room.fee + ' coins per racer and your rating changes. Leaving once the race has started forfeits your fee. Starting alone is practice: it is free, with no fee and no rating change.'
         : 'Casual: free to play. No coins are spent or won and ratings do not change.') + '</p>';
     html += difficultyHtml(room, isHost);
     if (isHost) html += '<button id="start" class="btn" type="button">' + (room.players.length === 1 ? 'Start practice' : 'Start race') + '</button>';
@@ -869,7 +869,7 @@ function renderPanel(room, me, rank) {
     if (practice && me.entered) {
       // alone in the room: the fee is handed back and the rating stays put, so there is no payout table to show
       html += '<p class="muted">' + (room.ranked
-        ? 'Practice run: your ' + room.fee + '-coin entry fee was returned and your rating did not change.'
+        ? 'Practice run: it was free, and your rating did not change.'
         : 'Practice run: no coins or rating changed.') + '</p>';
     } else {
       html += resultHtml(me);
