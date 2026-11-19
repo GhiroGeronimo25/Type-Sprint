@@ -673,7 +673,6 @@ function onCountdown(data) {
   composing = false;
   pendingReset = null;
   lastSent = '';
-  $('typed').textContent = 'Typed: (nothing yet)';
   $('typing').value = '';
   buildPassage();
 }
@@ -762,6 +761,7 @@ function render() {
 
   $('roomCode').textContent = room.code;
   $('status').textContent = labels[room.status] + (room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual') + ' \u00b7 ' + capital(room.difficulty);
+  $('room').dataset.status = room.status;
   $('stats').hidden = room.status === 'lobby';
   $('passage').hidden = room.status === 'lobby' || !state.text;
   $('hint').hidden = room.status !== 'racing';
@@ -961,25 +961,9 @@ function dropStrayStart(value) {
   return value;
 }
 
-function showTyped(raw) { // phones: the box is invisible, so show what the keyboard really entered
-  const shown = String(raw).replace(/ /g, '\u00b7');
-  $('typed').textContent = 'Typed: ' + (shown.length > 26 ? '\u2026' + shown.slice(-26) : shown || '(nothing yet)');
-}
-
-// The box is only ever appended to or backspaced. If the phone moves the caret to the start, every new letter goes
-// in front of the others and the text comes out backwards ("eht" for "the"): put the caret back at the end.
-function caretToEnd() {
-  const box = $('typing');
-  const end = box.value.length;
-  try {
-    if (box.selectionStart !== end || box.selectionEnd !== end) box.setSelectionRange(end, end);
-  } catch (e) { /* not every browser allows it */ }
-}
-
 function onTyping() {
   caretToEnd();
   const raw = $('typing').value;
-  if (isTouch) showTyped(raw);
   let full = normalizeTyped(raw);
   // Phone keyboards rewrite the word they are building (autocorrect, suggestions). That word is not final, so it
   // is not marked wrong and not sent until the keyboard commits it (space, punctuation or finishing the word).
@@ -1044,7 +1028,6 @@ function focusTyping() {
 function updateTapHint() {
   const needsTap = isTouch && !$('typing').disabled && document.activeElement !== $('typing');
   $('passage').classList.toggle('tap-to-type', needsTap);
-  $('typed').hidden = !(isTouch && !$('typing').disabled);
 }
 
 let scrollTimer = null;
@@ -1068,7 +1051,7 @@ if (window.visualViewport) {
     if (document.activeElement === $('typing')) keepPassageVisible();
   });
 }
-if (isTouch) $('hint').textContent = 'Tap the passage if the keyboard closes. Fix a mistake before you move on.';
+if (isTouch) $('hint').textContent = 'Tap the passage if the keyboard closes.';
 const blocked = ['paste', 'cut', 'drop'];
 for (let i = 0; i < blocked.length; i++) $('typing').addEventListener(blocked[i], blockEvent);
 $('passage').addEventListener('click', focusTyping);
@@ -1091,3 +1074,25 @@ function updateClock() {
 setInterval(updateClock, 100);
 
 startAuth();
+
+
+// ---------- phones: the top menu slides away when you scroll down and comes back when you scroll up ----------
+(function () {
+  const nav = $('topnav');
+  const phone = window.matchMedia('(max-width: 760px)');
+  let lastY = window.scrollY;
+  let waiting = false;
+  function update() {
+    waiting = false;
+    const y = Math.max(0, window.scrollY);
+    if (!phone.matches || y < 40) {
+      nav.classList.remove('nav-hidden');
+    } else if (Math.abs(y - lastY) > 6) {
+      nav.classList.toggle('nav-hidden', y > lastY);
+    }
+    lastY = y;
+  }
+  window.addEventListener('scroll', function () {
+    if (!waiting) { waiting = true; requestAnimationFrame(update); }
+  }, { passive: true });
+})();

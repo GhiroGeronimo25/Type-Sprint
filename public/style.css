@@ -765,9 +765,6 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   .passage { font-size: 1.1rem; }
 }
 
-/* what the keyboard really entered (phones only; the real box is invisible) */
-.typed { margin: 0.5rem 0 0; padding: 0.4rem 0.7rem; background: var(--ink); color: #fff; border-radius: 8px; font: 600 0.95rem/1.3 ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
 @media (max-width: 560px) {
   /* the room bar was sticky and wrapped to four lines: it ate 40% of the screen. One short row, not sticky. */
   .bar { position: static; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.4rem 0.5rem; margin: 0 0 0.6rem; padding: 0; }
@@ -776,4 +773,30 @@ main { padding-bottom: max(4rem, calc(2rem + env(safe-area-inset-bottom))); }
   .bar .status { grid-column: 1 / -1; grid-row: 2; font-size: 0.9rem; line-height: 1.25; }
   .bar #walletChip { grid-row: 1; grid-column: 3; justify-self: end; }
   .bar #leave { display: none; } /* same as the Lobby button */
+}
+
+/* ---------- Phones: scrolling header and the room screen ---------- */
+@media (max-width: 760px) {
+  body::before { position: absolute; } /* the checkered band scrolls away with the page */
+  .topnav { top: 0; transition: transform 0.22s ease; }
+  .topnav.nav-hidden { transform: translateY(calc(-100% - 20px)); }
+}
+@media (max-width: 560px) {
+  #room .lanes { gap: 0.6rem; }
+  .lane { grid-template-columns: 2rem 5.5rem 1fr 3.4rem; padding: 0.4rem 0.5rem; }
+  .lane .speed small, .lane .speed span { font-size: 0.7rem; }
+
+  /* the host panel: shorter text, difficulty as one row of three, full-width start button */
+  .panel { padding: 1rem; }
+  .panel h2 { font-size: 1.5rem; }
+  .panel p { font-size: 0.95rem; line-height: 1.4; margin-bottom: 0.8rem; }
+  .panel .difficulty { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; margin: 0.6rem 0 0.9rem; }
+  .panel .difficulty .muted { grid-column: 1 / -1; font-size: 0.85rem; }
+  .panel .difficulty .diff { padding: 0.45rem 0.4rem; text-align: center; }
+  .panel #start { width: 100%; padding: 0.85rem 1rem; font-size: 1.05rem; }
+  .panel .payout { max-width: none; margin-bottom: 0.8rem; }
+
+  /* after a race the result is all you need: no stats row or old passage to scroll past */
+  #room[data-status="finished"] .stats,
+  #room[data-status="finished"] .passage { display: none; }
 }
