@@ -865,10 +865,11 @@ function renderPanel(room, me, rank) {
   let html = '';
 
   if (room.status === 'lobby') {
-    html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2><p>Share the code <strong>' + room.code +
-      '</strong> or click it above to copy an invite link. ' + (room.ranked
-        ? 'Ranked: entry is ' + room.fee + ' coins per racer and your rating changes. Leaving once the race has started forfeits your fee. Starting alone is practice: it is free, with no fee and no rating change.'
-        : 'Casual: free to play. No coins are spent or won and ratings do not change.') + '</p>';
+    html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2>' +
+      '<p class="lobby-code">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' +
+      '<p class="fine">' + (room.ranked
+        ? 'Ranked: ' + room.fee + ' coins per racer, rating changes. Leaving after the start forfeits your fee. Alone = free practice.'
+        : 'Casual: free to play. No coins or rating changes.') + '</p>';
     html += difficultyHtml(room, isHost);
     if (isHost) html += '<button id="start" class="btn" type="button">' + (room.players.length === 1 ? 'Start practice' : 'Start race') + '</button>';
     else html += '<p>Waiting for the host to start.</p>';
