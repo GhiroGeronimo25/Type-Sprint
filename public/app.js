@@ -265,7 +265,7 @@ function renderLobby(rooms) {
     const r = rooms[i];
     html += '<li class="lobby-row">' +
       '<span class="share-line">' + esc(r.code) + '</span>' +
-      '<span class="lobby-host">' + esc(r.host) + '<small>' + (r.ranked ? 'Ranked \u00b7 ' + r.fee + ' coins' : 'Casual \u00b7 free') + ' \u00b7 ' + esc(capital(r.difficulty)) + '</small></span>' +
+      '<span class="lobby-host">' + esc(r.host) + '<small>' + (r.ranked ? 'Ranked \u00b7 ' + r.fee + ' coins' : 'Casual \u00b7 free') + ' \u00b7 ' + esc(capital(r.difficulty)) + (r.practicing ? ' \u00b7 <span class="badge-practice">Practicing now</span>' : '') + '</small></span>' +
       '<span class="lobby-seats">' + r.players + '/' + r.max + '</span>' +
       '<button class="btn secondary" type="button" data-code="' + esc(r.code) + '">Join</button></li>';
   }
@@ -421,7 +421,7 @@ function loadLocalRaces() {
 
 function saveLocalRace(room, me, rank) {
   if (room.status !== 'finished' || !me.entered) return;
-  if (room.ranked && room.players.length > 1) return; // real ranked races are saved on the account
+  if (room.ranked && !room.practice) return; // real ranked races are saved on the account
   if (!me.finished && me.wpm === 0) return;
   const id = room.code + ':' + room.startAt;
   const list = loadLocalRaces();
@@ -430,7 +430,7 @@ function saveLocalRace(room, me, rank) {
     id: id, endedAt: new Date().toISOString(), room: room.code, rank: rank,
     wpm: me.wpm, accuracy: me.accuracy, finished: me.finished, progress: me.progress,
     seconds: me.finished ? Math.round(me.finishMs / 100) / 10 : null,
-    kind: room.players.length === 1 ? 'Practice' : 'Casual',
+    kind: room.practice ? 'Practice' : 'Casual',
   });
   try { localStorage.setItem(LOCAL_RACES_KEY, JSON.stringify(list.slice(0, 30))); } catch (e) { /* storage can be blocked */ }
   renderRaceHistory();
@@ -771,7 +771,8 @@ function render() {
   if (index < 0) return;
   refreshChip();
   const me = room.players[index];
-  const practice = room.players.length === 1; // racing alone is practice: nobody to beat, nothing won or lost
+  const practice = !!room.practice; // racing alone is practice: nobody to beat, nothing won or lost
+  const inLobby = !!me.lobby && room.status !== 'lobby'; // joined while a practice was on: waits in the lobby
   const labels = {
     lobby: room.players.length + ' in the room',
     countdown: 'Get ready',
@@ -782,20 +783,20 @@ function render() {
   $('roomCode').textContent = room.code;
   $('status').textContent = '';
   const main = document.createElement('span');
-  main.textContent = labels[room.status];
+  main.textContent = inLobby ? 'In the lobby' : labels[room.status];
   const extra = document.createElement('span');
   extra.className = 'status-extra';
   extra.textContent = (practice && room.status !== 'lobby' ? '' : room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual') + ' \u00b7 ' + capital(room.difficulty);
   $('status').appendChild(main);
   $('status').appendChild(extra);
   $('room').dataset.status = room.status;
-  $('countOverlay').hidden = room.status !== 'countdown';
+  $('countOverlay').hidden = room.status !== 'countdown' || inLobby;
   // back to the room's waiting lobby: the host, when racing alone or once the race is over
   $('toLobby').hidden = !(room.hostId === socket.id && (room.status === 'finished' || (practice && room.status !== 'lobby')));
   $('room').dataset.solo = practice ? '1' : '0';
-  $('stats').hidden = room.status === 'lobby';
-  $('passage').hidden = room.status === 'lobby' || !state.text;
-  $('hint').hidden = room.status !== 'racing';
+  $('stats').hidden = room.status === 'lobby' || inLobby;
+  $('passage').hidden = room.status === 'lobby' || !state.text || inLobby;
+  $('hint').hidden = room.status !== 'racing' || inLobby;
   $('statWpm').textContent = me.wpm;
   $('statAcc').textContent = me.accuracy;
 
@@ -819,8 +820,13 @@ function render() {
 
 function renderLanes(room) {
   let html = '';
+  const waiting = [];
+  const me = room.players[myIndex(room)];
+  const meWaiting = !!me && !!me.lobby && room.status !== 'lobby';
+  if (meWaiting) html += '<p class="lane-title">Practicing now</p>';
   for (let i = 0; i < room.players.length; i++) {
     const p = room.players[i];
+    if (p.lobby && room.status !== 'lobby') { waiting.push(p); continue; } // waiting in the lobby: not in the race
     let cls = 'lane';
     let name = esc(p.name);
     if (p.id === socket.id) {
@@ -838,6 +844,9 @@ function renderLanes(room) {
       '<span class="name">' + name + (room.ranked ? ' <small class="rating">' + p.rating + '</small>' : '') + '</span>' +
       '<div class="track"><div class="fill" style="width:' + (p.progress * 100).toFixed(1) + '%"></div></div>' +
       '<span class="speed"><b>' + p.wpm + '</b> wpm</span></div>';
+  }
+  if (waiting.length > 0 && !meWaiting) {
+    html += '<p class="lane-note">In the lobby: ' + waiting.map(function (p) { return esc(p.name); }).join(', ') + '</p>';
   }
   $('lanes').innerHTML = html;
 }
@@ -863,6 +872,30 @@ function renderPanel(room, me, rank) {
   const winner = room.players[0];
   const practice = room.players.length === 1; // alone in the room
   let html = '';
+
+  if (me.lobby && room.status !== 'lobby') {
+    // joined while someone was practicing: this player is in the lobby, not in the practice
+    const busy = room.status === 'countdown' || room.status === 'racing';
+    const names = room.players.filter(function (p) { return !p.lobby; }).map(function (p) { return esc(p.name); }).join(', ');
+    html = '<h2>You are in the lobby</h2>' +
+      '<p class="share-line">Room code <strong>' + room.code + '</strong></p>' +
+      (busy
+        ? '<p class="practice-ind"><span class="dot"></span>' + (names || 'The host') + ' is practicing. You can join the next race when it is over.</p>'
+        : '<p class="practice-ind idle">' + (names || 'The host') + ' finished practicing. Waiting for the next race.</p>');
+    html += difficultyHtml(room, isHost && !busy);
+    if (isHost && !busy) html += '<button id="start" class="btn" type="button">Start race</button>';
+    else if (!isHost) html += '<p class="fine">Waiting for the host to start.</p>';
+    $('resultOverlay').hidden = true;
+    $('resultCard').innerHTML = '';
+    $('panel').innerHTML = html;
+    if ($('start')) $('start').addEventListener('click', startRace);
+    document.querySelectorAll('#panel [data-difficulty]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        socket.emit('room:difficulty', { difficulty: button.getAttribute('data-difficulty') });
+      });
+    });
+    return;
+  }
 
   if (room.status === 'lobby') {
     html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2>' +
@@ -904,7 +937,9 @@ function renderPanel(room, me, rank) {
       if (!room.ranked) html += '<p class="muted">Casual race: no coins or rating changed.</p>';
     }
     html += difficultyHtml(room, isHost);
-    if (isHost) html += '<button id="start" class="btn" type="button">' + (practice ? 'Practice again' : 'Race again') + '</button>';
+    const waitingNames = room.players.filter(function (p) { return p.lobby; }).map(function (p) { return esc(p.name); });
+    if (waitingNames.length > 0) html += '<p class="muted">' + waitingNames.join(', ') + (waitingNames.length === 1 ? ' is' : ' are') + ' waiting in the lobby.</p>';
+    if (isHost) html += '<button id="start" class="btn" type="button">' + (waitingNames.length > 0 ? 'Start race' : practice ? 'Practice again' : 'Race again') + '</button>';
     else html += '<p>Waiting for the host to start another race.</p>';
   }
 

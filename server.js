@@ -321,6 +321,7 @@ function allFinished(room) {
 
 // sort order: finished players (earliest first), then everyone else by progress
 function byRank(a, b) {
+  if (!!a.lobby !== !!b.lobby) return a.lobby ? 1 : -1; // players waiting in the lobby are not in the race
   if (a.entered !== b.entered) return a.entered ? -1 : 1;
   if (a.finished !== b.finished) return a.finished ? -1 : 1;
   if (a.finished) return a.finishedAt - b.finishedAt;
@@ -342,6 +343,7 @@ function resetPlayer(p) {
   p.entered = false; // paid the entry fee for this race
   p.forfeited = false; // paid, but disconnected (or left) once the race had begun: the fee stays in the pot
   p.result = null;   // coins and rating change once the race is over
+  p.lobby = false;   // true: joined while a race/practice was on, so waits in the lobby instead of watching it
 }
 
 function updateStats(room, p) {
@@ -429,14 +431,15 @@ function openRooms() {
   const list = [];
   Object.keys(rooms).forEach(function (code) {
     const room = rooms[code];
-    if (room.status !== 'lobby' || room.starting || room.listed === false) return; // already racing, or a quick-match room
+    const practicing = !!room.practice && (room.status === 'countdown' || room.status === 'racing');
+    if (!((room.status === 'lobby' && !room.starting) || practicing) || room.listed === false) return; // a race with others is already on, or a quick-match room
     if (room.players.length >= MAX_PLAYERS) return;
     const here = room.players.filter(function (p) { return !p.away; });
     if (here.length === 0) return;
     const host = findById(room, room.hostId) || here[0];
     list.push({
       code: room.code, host: host.name, ranked: room.ranked, difficulty: room.difficulty,
-      players: room.players.length, max: MAX_PLAYERS, fee: ENTRY_FEE, createdAt: room.createdAt || 0,
+      practicing: practicing, players: room.players.length, max: MAX_PLAYERS, fee: ENTRY_FEE, createdAt: room.createdAt || 0,
     });
   });
   list.sort(function (a, b) { return b.createdAt - a.createdAt; });
@@ -472,12 +475,14 @@ function broadcast(room) {
       forfeited: !!p.forfeited,
       rating: p.rating,
       away: !!p.away,
+      lobby: !!p.lobby,
       finishMs: p.finishedAt - room.startAt,
     });
   }
   io.to(room.code).emit('room:state', {
     code: room.code,
     status: room.status, // lobby, countdown, racing or finished
+    practice: !!room.practice, // a solo practice run: others who join wait in the lobby (player.lobby)
     hostId: room.hostId,
     startAt: room.startAt,
     serverNow: Date.now(),
@@ -507,6 +512,7 @@ function sendAccount(p) {
 async function startRace(room) {
   let entered;
   // Racing alone is practice: it is free, so no fee is taken, nothing is paid out and the rating stays put.
+  room.practice = room.players.length === 1; // racing alone: free, and anyone who joins waits in the lobby
   room.paid = room.ranked && room.players.length > 1;
   if (!room.paid) {
     entered = room.players.map(function (p) { return p.pid; });
@@ -671,6 +677,7 @@ function joinRoom(socket, room, rawName, pid) {
   }
   const player = { id: socket.id, pid: pid || socket.id, name: name, away: false, awayTimer: null };
   resetPlayer(player);
+  player.lobby = room.status !== 'lobby'; // joined mid-practice (or after a race): waits in the lobby, not in the race
   player.rating = 1000; // replaced by the real rating once the account has loaded
   room.players.push(player);
   socket.join(room.code);
@@ -1123,7 +1130,8 @@ function onConnection(socket) {
     const room = rooms[code];
     const pid = socket.data.pid;
     const existing = room && findByPid(room, pid);
-    const started = room && (room.starting || room.status === 'countdown' || room.status === 'racing');
+    // a practice run (one player) does not close the room: newcomers wait in the lobby until it is over
+    const started = room && (room.starting || ((room.status === 'countdown' || room.status === 'racing') && !room.practice));
     let error = '';
     if (socket.data.code) error = 'You are already in a room.';
     else if (!room) error = 'No room with code ' + code + '.';
@@ -1175,7 +1183,7 @@ function onConnection(socket) {
       ok: true,
       code: room.code,
       status: room.status,
-      text: room.status === 'lobby' ? '' : room.text,
+      text: room.status === 'lobby' || p.lobby ? '' : room.text,
       startAt: room.startAt,
       limitMs: RACE_MS,
       serverNow: Date.now(),
@@ -1201,7 +1209,7 @@ function onConnection(socket) {
     const room = rooms[socket.data.code];
     if (!room || room.hostId !== socket.id) return;
     if (room.starting || room.settling) return;
-    const practice = !room.paid && room.players.length === 1;
+    const practice = !!room.practice;
     if (!(room.status === 'finished' || (practice && (room.status === 'countdown' || room.status === 'racing')))) return;
     clearInterval(room.tickTimer);
     clearTimeout(room.endTimer);
@@ -1209,6 +1217,7 @@ function onConnection(socket) {
     room.startAt = 0;
     room.pot = 0;
     room.paid = false;
+    room.practice = false;
     room.players.forEach(resetPlayer);
     broadcast(room);
   }

@@ -1015,3 +1015,13 @@ body { padding-top: var(--nav-space, 0px); }
 }
 .panel .share-line { background: none; padding: 0; letter-spacing: normal; font-weight: 500; }
 .panel .fine { max-width: none; }
+
+/* ---------- players waiting in the lobby while someone practices ---------- */
+.lane-title { margin: 0; font-weight: 800; color: var(--white); }
+.lane-note { margin: 0; font-weight: 700; color: var(--white); font-size: 0.9rem; }
+.practice-ind { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; }
+.practice-ind .dot { flex: none; width: 0.7rem; height: 0.7rem; border-radius: 50%; background: #0a8f62; animation: pulse 1.2s ease-in-out infinite; }
+.practice-ind.idle { opacity: 0.8; }
+.badge-practice { display: inline-block; padding: 0 0.4rem; border-radius: 999px; background: #0a8f62; color: #fff; font-size: 0.7rem; font-weight: 800; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .practice-ind .dot { animation: none; } }
