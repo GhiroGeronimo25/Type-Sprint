@@ -73,7 +73,7 @@ async function onAuthSubmit(event) {
     if (!USERNAME_RE.test(username)) return showAuthMessage('Username: 3-16 letters, numbers, dots, dashes or underscores.', true);
     const check = await (await fetch('/api/username-available?name=' + encodeURIComponent(username))).json();
     if (!check.ok) return showAuthMessage(check.error || 'That username is not available.', true);
-    const res = await supa.auth.signUp({ email: email, password: password, options: { data: { username: username } } });
+    const res = await supa.auth.signUp({ email: email, password: password, options: { data: { username: username }, emailRedirectTo: window.location.origin } });
     if (res.error) return showAuthMessage(friendlyAuthError(res.error), true);
     // When an email is already registered, Supabase answers with a fake "new" user that has no identities (so it
     // can't be used to find out who has an account). That is not a new account: say so instead of "check your email".
