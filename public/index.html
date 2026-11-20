@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Type Sprint</title>
+  <meta name="theme-color" content="#2043f0">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232043f0'/%3E%3Cpath d='M16 22h32v8H36v16h-8V30H16z' fill='%23ffc72c'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=38">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header id="topnav" class="topnav" hidden>
+    <div class="topnav-inner">
+      <a class="brand" href="#play" data-nav="play" aria-label="Type Sprint home">Type Sprint</a>
+      <nav id="tabs" class="tabs" aria-label="Main">
+        <button type="button" class="navtab" data-nav="play">Play</button>
+        <button type="button" class="navtab" data-nav="stats">Stats</button>
+        <button type="button" class="navtab" data-nav="wallet">Wallet</button>
+        <button type="button" class="navtab" data-nav="board">Leaderboard</button>
+      </nav>
+      <div id="userBar" class="user-bar">
+        <span id="coinPill" class="chip" hidden></span>
+        <span class="who"><b id="userEmail"></b></span>
+        <button id="signOut" class="btn ghost" type="button">Log out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Login -->
+    <section id="auth" class="screen" hidden>
+      <h1>Type Sprint</h1>
+      <p class="lede">Log in to race, earn coins and climb the leaderboard.</p>
+      <form id="authForm" class="join-card" novalidate>
+        <h2 id="authTitle" class="auth-title">Log in</h2>
+        <div id="usernameRow" hidden>
+          <label for="authUsername">Username</label>
+          <input id="authUsername" type="text" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="3-16 letters, numbers, . - _">
+        </div>
+        <label for="authEmail">Email</label>
+        <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
+        <label for="authPassword">Password</label>
+        <input id="authPassword" type="password" autocomplete="current-password" minlength="6" placeholder="At least 6 characters" required>
+        <p id="authMsg" class="auth-msg" role="alert" hidden></p>
+        <div class="actions"><button id="authSubmit" class="btn" type="submit">Log in</button></div>
+        <p class="auth-switch"><span id="authSwitchText">New here?</span> <button id="authSwitch" class="link" type="button">Create an account</button></p>
+      </form>
+    </section>
+
+    <!-- Home -->
+    <section id="home" class="screen" data-tab="play" hidden>
+      <h1 class="hero-title" data-pane="play">Type Sprint</h1>
+      <span class="sticker" data-pane="play">Up to 5 racers<br>live scoring</span>
+
+      <div class="join-card" data-pane="play">
+        <input id="name" type="hidden">
+
+        <div class="setup-step">
+          <h2 class="step-title">Choose your race</h2>
+
+          <fieldset class="seg-group">
+            <legend>Race type</legend>
+            <div class="seg cols-2">
+              <label><input type="radio" name="mode" value="ranked" checked><span><b>Ranked</b><small>Entry fee, prizes, rating changes</small></span></label>
+              <label><input type="radio" name="mode" value="casual"><span><b>Casual</b><small>Free, no coins or rating</small></span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="seg-group">
+            <legend>Passage difficulty</legend>
+            <div class="seg cols-3">
+              <label><input type="radio" name="difficulty" value="easy"><span><b>Easy</b><small>Short, everyday words</small></span></label>
+              <label><input type="radio" name="difficulty" value="medium" checked><span><b>Medium</b><small>A full paragraph</small></span></label>
+              <label><input type="radio" name="difficulty" value="hard"><span><b>Hard</b><small>Long words, numbers, punctuation</small></span></label>
+            </div>
+          </fieldset>
+        </div>
+
+        <div class="setup-step">
+          <h2 class="step-title">Pick how to start</h2>
+
+          <div class="start-option">
+            <button id="quick" class="btn big" type="button">Quick match</button>
+            <p class="muted">Instantly find opponents with a similar rating.</p>
+          </div>
+          <div id="searching" class="searching" role="status" aria-live="polite" hidden>
+            <span id="searchText">Searching for opponents...</span>
+            <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
+          </div>
+
+          <div class="start-split">
+            <div class="start-option">
+              <button id="create" class="btn secondary big" type="button">Create room</button>
+              <p class="muted">Host a room and share the code with friends.</p>
+            </div>
+            <div class="start-option join-row">
+              <div class="join-inputs">
+                <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="Room code">
+                <button id="join" class="btn secondary" type="button">Join room</button>
+              </div>
+              <p class="muted">Have a four-letter code? Enter it here.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wallet and transactions -->
+      <section id="wallet" class="wallet" data-pane="wallet" hidden>
+        <h2>Your wallet</h2>
+        <div id="walletStats" class="record-stats"></div>
+        <p class="wallet-note">Ranked races cost <b id="feeNote">50</b> coins to enter. The prize pool is split among the racers who finish highest, and a racer who disconnects forfeits their entry fee. Coins are virtual only: they can't be bought with real money or cashed out.</p>
+        <div class="wallet-head">
+          <h3>Transaction history</h3>
+          <div id="ledgerFilters" class="filters" role="group" aria-label="Filter transactions">
+            <button type="button" class="chipbtn active" data-type="">All</button>
+            <button type="button" class="chipbtn" data-type="reward">Prizes</button>
+            <button type="button" class="chipbtn" data-type="entry">Entry fees</button>
+            <button type="button" class="chipbtn" data-type="refund">Refunds</button>
+          </div>
+        </div>
+        <ol id="ledger" class="ledger"></ol>
+        <p id="ledgerEmpty" class="wallet-note" hidden>No transactions here yet.</p>
+        <button id="ledgerMore" class="btn ghost" type="button" hidden>Show more</button>
+      </section>
+
+      <!-- Live lobby: rooms anyone can join right now -->
+      <section id="lobby" class="lobby" data-pane="play">
+        <div class="lobby-head">
+          <h2>Open rooms</h2>
+          <span class="live"><i></i>Live</span>
+        </div>
+        <ul id="lobbyList" class="lobby-list"></ul>
+        <p id="lobbyEmpty" class="wallet-note">No open rooms right now. Create one and others can join it from here.</p>
+      </section>
+
+      <!-- Ranked race history (from the REST API) -->
+      <section id="raceHistory" class="records" data-pane="stats" hidden>
+        <div class="records-head"><h2>Race history</h2></div>
+        <p class="wallet-note">Ranked races are saved on your account. Casual and practice races are kept in this browser.</p>
+        <ol id="raceList" class="record-list"></ol>
+        <button id="raceMore" class="btn ghost" type="button" hidden>Show more</button>
+      </section>
+
+      <p id="statsEmpty" class="empty-tab" data-pane="stats" hidden>No races yet. Play a race and your stats will show up here.</p>
+      <p id="boardEmpty" class="empty-tab" data-pane="board" hidden>The leaderboard is empty. Finish a ranked race to get on it.</p>
+
+      <!-- Stats and leaderboard (kept on the server) -->
+      <section id="myStats" class="statcard" data-pane="stats" hidden>
+        <h2>Your stats</h2>
+        <div id="statsSummary" class="record-stats"></div>
+        <div class="stats-grid">
+          <div>
+            <h3>Accuracy over your last races</h3>
+            <div id="trendChart"></div>
+          </div>
+          <div>
+            <h3>Most-missed characters</h3>
+            <ol id="missedList" class="missed"></ol>
+          </div>
+        </div>
+        <p id="statsNote" class="wallet-note" hidden></p>
+      </section>
+
+      <section id="board" class="statcard" data-pane="board" hidden>
+        <h2>Leaderboard</h2>
+        <p class="wallet-note">Ranked players by rating. Races that anti-cheat flagged don't count.</p>
+        <div class="table-wrap">
+          <table id="boardTable">
+            <thead><tr><th>#</th><th>Player</th><th>Rating</th><th>Best WPM</th><th>Wins / races</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <!-- Room -->
+    <section id="room" class="screen" hidden>
+      <header class="bar">
+        <button id="toLobby" class="btn ghost back" type="button" aria-label="Back to the room lobby" hidden>← Lobby</button>
+        <button id="copyLink" class="code" type="button" title="Copy invite link">
+          <span class="muted">Room</span> <strong id="roomCode">----</strong>
+        </button>
+        <span id="status" class="status"></span>
+        <span id="walletChip" class="chip" hidden></span>
+        <button id="leave" class="btn ghost" type="button">Leave room</button>
+      </header>
+
+      <div id="countOverlay" class="count-overlay" aria-live="polite" hidden><div id="count" class="count">3</div></div>
+
+      <div id="resultOverlay" class="result-overlay" role="dialog" aria-modal="true" aria-label="Race results" hidden>
+        <div id="resultCard" class="panel result-card"></div>
+      </div>
+
+      <section id="lanes" class="lanes" aria-label="Live leaderboard"></section>
+
+      <section class="stage">
+        <div id="panel" class="panel"></div>
+
+        <div id="stats" class="stats" hidden>
+          <div><b id="statWpm">0</b><span>WPM</span></div>
+          <div><b id="statAcc">100</b><span>% accuracy</span></div>
+          <div><b id="statTime">1:00</b><span>time left</span></div>
+        </div>
+
+        <div id="passage" class="passage" hidden></div>
+        <p id="hint" class="hint" hidden>Click the passage if typing stops. Fix a mistake before you move on.</p>
+
+        <input id="typing" type="text" autocorrect="off" autocapitalize="none" autocomplete="off" spellcheck="false" inputmode="text" enterkeyhint="done" data-gramm="false" aria-label="Type the passage here" disabled>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+  <script src="app.js?v=31"></script>
+</body>
+</html>
