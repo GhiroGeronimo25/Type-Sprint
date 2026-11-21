@@ -39,6 +39,16 @@ const ENTRY_FEE = accounts.ENTRY_FEE;
 const requireLogin = require('./api-data')(app, accounts, passages).requireLogin; // wallet, races, stats, leaderboard, passages
 require('./api-auth')(app, accounts, requireLogin);                             // sign-up, login, refresh, logout, profile
 
+// Sign-ups that never confirm their email are deleted (login and address) once the confirmation link has expired.
+const UNCONFIRMED_TTL_MS = (Number(process.env.UNCONFIRMED_TTL_MIN) || 60) * 60000; // Supabase links last an hour by default
+function purgeUnconfirmed() {
+  accounts.purgeUnconfirmed(UNCONFIRMED_TTL_MS).then(function (n) {
+    if (n > 0) console.log('Removed ' + n + ' unconfirmed sign-up(s).');
+  }).catch(function (e) { console.error('Could not clean up unconfirmed sign-ups:', e.message); });
+}
+purgeUnconfirmed();
+setInterval(purgeUnconfirmed, 10 * 60000).unref();
+
 io.use(async function (socket, next) {
   try {
     const user = await accounts.verifyToken(((socket.handshake || {}).auth || {}).token);

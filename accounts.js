@@ -126,6 +126,29 @@ function createAccounts(url, serviceKey, anonKey) {
     if (res.error && !/session_not_found|invalid/i.test(String(res.error.code || res.error.message))) throw authError(res.error);
   }
 
+  // Removes sign-ups that never confirmed their email once they are older than maxAgeMs, so an unconfirmed
+  // email address is not kept. Resolves to how many were removed.
+  async function purgeUnconfirmed(maxAgeMs) {
+    const cutoff = Date.now() - maxAgeMs;
+    const stale = [];
+    for (let page = 1; page <= 100; page++) {
+      const res = await db.auth.admin.listUsers({ page: page, perPage: 200 });
+      if (res.error) throw new Error('listing users failed: ' + res.error.message);
+      const users = (res.data && res.data.users) || [];
+      users.forEach(function (u) {
+        if (u.email && !u.email_confirmed_at && !u.confirmed_at && Date.parse(u.created_at) < cutoff) stale.push(u.id);
+      });
+      if (users.length < 200) break;
+    }
+    let removed = 0;
+    for (let i = 0; i < stale.length; i++) { // collected first: deleting while paging would skip people
+      const del = await db.auth.admin.deleteUser(stale[i]);
+      if (del.error) console.error('Could not remove unconfirmed user ' + stale[i] + ':', del.error.message);
+      else removed++;
+    }
+    return removed;
+  }
+
   function withFee(view) {
     if (view) view.entryFee = ENTRY_FEE;
     return view;
@@ -255,7 +278,7 @@ function createAccounts(url, serviceKey, anonKey) {
   }
 
   return {
-    verifyToken: verifyToken, signUp: signUp, signIn: signIn, refreshSession: refreshSession, signOut: signOut, ledgerPage: ledgerPage, raceHistory: raceHistory, raceDetail: raceDetail, usernameAvailable: usernameAvailable, join: join, view: view,
+    verifyToken: verifyToken, purgeUnconfirmed: purgeUnconfirmed, signUp: signUp, signIn: signIn, refreshSession: refreshSession, signOut: signOut, ledgerPage: ledgerPage, raceHistory: raceHistory, raceDetail: raceDetail, usernameAvailable: usernameAvailable, join: join, view: view,
     recordRaceStats: recordRaceStats, playerStats: playerStats, leaderboard: leaderboard,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
     settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,
