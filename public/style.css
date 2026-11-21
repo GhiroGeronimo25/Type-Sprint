@@ -1202,3 +1202,10 @@ body { padding-top: var(--nav-space, 0px); }
 }
 .result-card h2 { font-size: 1.1rem; margin: 0 0 0.3rem; padding-right: 4.5rem; }
 .result-card p { margin: 0.25rem 0; }
+
+/* ---------- Stats + Race history: stacked instead of side by side ---------- */
+#home #statsSummary { grid-template-columns: 1fr; }
+#home #myStats .stats-grid { grid-template-columns: 1fr; }
+#home #raceList li { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; padding: 0.75rem 0.2rem; }
+#home #raceList li > * { white-space: normal; text-align: left; justify-self: auto; font-size: inherit; }
+#home #raceList li > .muted:last-child { font-size: 0.85rem; }
