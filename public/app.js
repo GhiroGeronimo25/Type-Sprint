@@ -74,17 +74,14 @@ function showAuthMessage(text, isError, mode) {
 let authMode = 'login';
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
 
-// Log in and Sign up are two forms sitting side by side in a clipped track; switching slides between them.
+// Log in (left) and Sign up (right) share one card; a sliding cover hides whichever one is not in use.
 function setAuthMode(mode) {
   authMode = mode;
   showAuthMessage('', false, 'login');
   showAuthMessage('', false, 'signup');
   const signup = mode === 'signup';
-  $('authTrack').dataset.mode = mode;
-  $('authTabs').dataset.mode = mode;
-  $('tabLogin').setAttribute('aria-selected', String(!signup));
-  $('tabSignup').setAttribute('aria-selected', String(signup));
-  // the off-screen form stays hidden from tabbing and screen readers
+  $('authCard').dataset.mode = mode;
+  // the covered form stays hidden from tabbing and screen readers
   $('loginForm').inert = signup;
   $('signupForm').inert = !signup;
   $('loginForm').setAttribute('aria-hidden', String(signup));
@@ -92,16 +89,12 @@ function setAuthMode(mode) {
   sizeAuth();
 }
 
-// The card is as tall as the visible form (animated); the grid keeps the height of the taller one so nothing else moves.
+// On phones the card is as tall as the visible form (animated). On desktop the height is natural.
 function sizeAuth() {
-  const vp = document.querySelector('.auth-viewport');
-  const card = document.querySelector('.auth-card');
-  const grid = document.querySelector('.auth-grid');
+  const panes = $('authPanes');
   const l = $('loginForm').offsetHeight, s = $('signupForm').offsetHeight;
   if (!l || !s) return; // screen is hidden right now
-  vp.style.height = (authMode === 'signup' ? s : l) + 'px';
-  const chrome = card.offsetHeight - vp.offsetHeight;
-  grid.style.minHeight = window.matchMedia('(min-width: 821px)').matches ? (chrome + Math.max(l, s)) + 'px' : '';
+  panes.style.height = window.matchMedia('(max-width: 760px)').matches ? (authMode === 'signup' ? s : l) + 'px' : '';
 }
 
 async function onAuthSubmit(event, mode) {
@@ -174,11 +167,9 @@ function startAuth() {
   function switchTo(mode) {
     if (authMode === mode) return;
     setAuthMode(mode);
-    $('authTrack').parentNode.scrollLeft = 0; // the clipped viewport must never scroll on its own
-    $(mode === 'signup' ? 'signupUsername' : 'loginEmail').focus({ preventScroll: true });
+    // focus after the cover has mostly slid away so the page never jumps
+    setTimeout(function () { $(mode === 'signup' ? 'signupUsername' : 'loginEmail').focus({ preventScroll: true }); }, 350);
   }
-  $('tabLogin').addEventListener('click', function () { switchTo('login'); });
-  $('tabSignup').addEventListener('click', function () { switchTo('signup'); });
   document.querySelectorAll('[data-switch]').forEach(function (b) {
     b.addEventListener('click', function () { switchTo(b.dataset.switch); });
   });
