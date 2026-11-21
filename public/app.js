@@ -367,7 +367,18 @@ socket.on('lobby:rooms', function (data) { renderLobby((data || {}).rooms); });
 const urlRoom = new URLSearchParams(location.search).get('room');
 if (urlRoom) $('code').value = urlRoom.toUpperCase().slice(0, 4);
 
+function openRoomModal() {
+  $('roomModal').hidden = false;
+  $('code').focus();
+}
+function closeRoomModal() {
+  $('roomModal').hidden = true;
+  $('openRoomModal').focus();
+}
+if (urlRoom) setTimeout(openRoomModal, 0);
+
 function onEntered(result) {
+  if (result && result.ok) $('roomModal').hidden = true;
   if (!result || !result.ok) return showToast(result && result.error ? result.error : 'Something went wrong. Please try again.');
   showSearching(false);
   localStorage.setItem('session', result.code);
@@ -477,6 +488,9 @@ function syncJoin() {
 $('code').addEventListener('input', syncJoin);
 syncJoin();
 
+$('openRoomModal').addEventListener('click', openRoomModal);
+$('closeRoomModal').addEventListener('click', closeRoomModal);
+$('roomModal').addEventListener('click', function (e) { if (e.target === $('roomModal')) closeRoomModal(); });
 $('create').addEventListener('click', createRoom);
 $('join').addEventListener('click', joinRoom);
 $('quick').addEventListener('click', quickMatch);
@@ -998,5 +1012,6 @@ startAuth();
 })();
 
 document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && !$('roomModal').hidden) closeRoomModal();
   if (e.key === 'Escape' && !$('resultOverlay').hidden && $('closeResult')) $('closeResult').click();
 });
