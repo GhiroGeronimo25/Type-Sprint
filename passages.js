@@ -128,4 +128,4 @@ function describe(level) {
   });
 }
 
-module.exports = { summary: summary, describe: describe, BANK: BANK, DIFFICULTIES: DIFFICULTIES, DEFAULT_DIFFICULTY: DEFAULT_DIFFICULTY, validate: validate, isDifficulty: isDifficulty, pick: pick };
+module.exports = { summary: summary, describe: describe, DEFAULT_DIFFICULTY: DEFAULT_DIFFICULTY, isDifficulty: isDifficulty, pick: pick };

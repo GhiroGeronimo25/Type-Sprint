@@ -27,8 +27,6 @@ const io = new socketio.Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '4kb' })); // request bodies for the REST room and matchmaking endpoints
 
-// The browser needs the project URL and the ANON key to show the login form. Both are public by design.
-// (Never expose SUPABASE_SERVICE_KEY here.)
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
 app.get('/api/username-available', function (req, res) {
   const name = String((req.query || {}).name || '');
@@ -41,6 +39,8 @@ app.get('/api/username-available', function (req, res) {
   });
 });
 
+// The browser needs the project URL and the ANON key to show the login form. Both are public by design.
+// (Never expose SUPABASE_SERVICE_KEY here.)
 app.get('/config.json', function (req, res) {
   res.json({ supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '' });
 });
@@ -59,7 +59,6 @@ io.use(async function (socket, next) {
     const user = await accounts.verifyToken(((socket.handshake || {}).auth || {}).token);
     if (!user) return next(new Error('unauthorized'));
     socket.data.pid = user.id;
-    socket.data.email = user.email;
     // the display name comes from the account (chosen at sign-up), never from what the browser sends
     socket.data.name = user.username || String(user.email || '').split('@')[0];
     next();
@@ -354,7 +353,6 @@ function updateStats(room, p) {
   if (p.keys > 0) p.accuracy = Math.round((1 - p.errors / p.keys) * 1000) / 10;
 }
 
-// returns false if the input looks fake (paste, bots) so the client can be reset
 // anti-cheat: note what happened (once per kind per race, with a count) so it can be saved and reviewed
 function flag(p, reason, detail) {
   if (p.flags[reason]) p.flags[reason].count++;
@@ -420,7 +418,6 @@ function handleInput(room, p, input) {
   return true;
 }
 
-// ---------- sending the leaderboard ----------
 // ---------- live lobby: the open rooms anybody can join ----------
 // Sockets on the home screen sit in the 'lobby' channel and get the list whenever it changes.
 // The list never holds a pid: only the room code, the host's name and a few settings.
@@ -769,7 +766,6 @@ function dropConnection(socket) {
   else broadcast(room);
 }
 
-// ---------- socket events ----------
 // ---------- quick match ----------
 const matchmaker = createMatchmaker({ fillMs: Number(process.env.MM_FILL_MS) || 5000 }); // the env override is for tests
 

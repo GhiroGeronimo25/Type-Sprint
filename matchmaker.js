@@ -90,7 +90,7 @@ function createMatchmaker(options) {
     return groups;
   }
 
-  return { add: add, remove: remove, has: has, all: all, poolSize: poolSize, take: take, windowFor: windowFor, options: opts };
+  return { add: add, remove: remove, has: has, all: all, poolSize: poolSize, take: take };
 }
 
 module.exports = createMatchmaker;

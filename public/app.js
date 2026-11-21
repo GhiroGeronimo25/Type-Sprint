@@ -106,7 +106,6 @@ function onAuthChange(session) {
     pid = session.user.id;
     const username = (session.user.user_metadata || {}).username || String(session.user.email || '').split('@')[0];
     $('userEmail').textContent = username;
-    $('name').value = username; // the server uses the account's name; this only keeps the screen consistent
     $('authPassword').value = '';
     if (changedUser) socket.disconnect(); // a different person logged in: start a fresh connection
     socket.connect();                     // does nothing if already connected
@@ -276,7 +275,7 @@ $('lobbyList').addEventListener('click', function (event) {
   const button = event.target.closest('button[data-code]');
   if (!button) return;
   button.disabled = true;
-  socket.emit('room:join', { name: $('name').value, code: button.getAttribute('data-code'), pid: pid }, function (result) {
+  socket.emit('room:join', { code: button.getAttribute('data-code') }, function (result) {
     button.disabled = false;
     onEntered(result);
   });
@@ -329,7 +328,7 @@ function quickMatch() {
   const mode = document.querySelector('input[name="mode"]:checked');
   const level = document.querySelector('input[name="difficulty"]:checked');
   emitWithFeedback('match:join', {
-    name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium',
+    ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium',
   }, function (res) {
     if (!res || !res.ok) return showToast(res && res.error ? res.error : 'Could not start searching.');
     showSearching(true);
@@ -355,11 +354,11 @@ function onMatchFound(data) {
 function createRoom() {
   const mode = document.querySelector('input[name="mode"]:checked');
   const level = document.querySelector('input[name="difficulty"]:checked');
-  emitWithFeedback('room:create', { name: $('name').value, pid: pid, ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium' }, onEntered);
+  emitWithFeedback('room:create', { ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium' }, onEntered);
 }
 
 function joinRoom() {
-  emitWithFeedback('room:join', { name: $('name').value, code: $('code').value, pid: pid }, onEntered);
+  emitWithFeedback('room:join', { code: $('code').value }, onEntered);
 }
 
 function onHomeKey(event) {
@@ -394,7 +393,6 @@ $('create').addEventListener('click', createRoom);
 $('join').addEventListener('click', joinRoom);
 $('quick').addEventListener('click', quickMatch);
 $('cancelSearch').addEventListener('click', cancelSearch);
-$('name').addEventListener('keydown', onHomeKey);
 $('code').addEventListener('keydown', onHomeKey);
 $('leave').addEventListener('click', leaveRoom);
 $('copyLink').addEventListener('click', copyLink);
@@ -712,14 +710,14 @@ function onDisconnect() {
 function onConnect() {
   showSearching(false); // a dropped connection also dropped our place in the queue
   watchLobby();
-  socket.emit('account:get', { pid: pid }, function (res) {
+  socket.emit('account:get', {}, function (res) {
     if (res && res.ok) setAccount(res.account);
   });
   loadStats();
   const code = localStorage.getItem('session');
   if (!code) return;
   if (urlRoom && urlRoom.toUpperCase().slice(0, 4) !== code) return; // opened an invite to another room
-  socket.emit('room:rejoin', { code: code, pid: pid }, onRejoined);
+  socket.emit('room:rejoin', { code: code }, onRejoined);
 }
 
 function onRejoined(result) {
@@ -1022,13 +1020,6 @@ function updatePassage(input, pending) {
 
 
 // ---------- typing ----------
-// how many letters from `from` on are wrong (letters that match don't count)
-function wrongAfter(input, text, from) {
-  let n = 0;
-  for (let i = from; i < input.length; i++) if (input[i] !== text[i]) n++;
-  return n;
-}
-
 const MAX_WRONG = 10; // same limit as the server
 
 // Phone keyboards swap plain characters for fancy ones (curly quotes, long dashes, odd spaces). The passage only
