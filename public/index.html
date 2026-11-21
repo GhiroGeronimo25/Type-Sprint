@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=46">
+  <link rel="stylesheet" href="style.css?v=47">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -23,6 +23,7 @@
         <button type="button" class="navtab" data-nav="board">Leaderboard</button>
       </nav>
       <div id="userBar" class="user-bar">
+        <button id="openRoomModal" class="btn secondary room-btn" type="button" aria-haspopup="dialog" aria-controls="roomModal">Create room</button>
         <span id="coinPill" class="chip" hidden></span>
         <span class="who"><b id="userEmail"></b></span>
         <button id="signOut" class="btn ghost" type="button">Log out</button>
@@ -148,32 +149,6 @@
           <p id="quickHint" class="muted">Instantly find opponents with a similar rating.</p>
         </div>
 
-        <details class="friends">
-          <summary>Play with friends</summary>
-          <div class="friends-body">
-            <div class="friends-row">
-              <span class="friends-label">Create a room</span>
-              <fieldset class="opt-group size-group">
-                <legend class="sr-only">Players in the room</legend>
-                <div class="pills cols-3">
-                  <label><input type="radio" name="size" value="5" checked><span>5</span></label>
-                  <label><input type="radio" name="size" value="10"><span>10</span></label>
-                  <label><input type="radio" name="size" value="15"><span>15</span></label>
-                </div>
-              </fieldset>
-              <button id="create" class="btn secondary" type="button">Create room</button>
-              <p class="opt-hint">Players in the room. You get a code to share.</p>
-            </div>
-            <div class="friends-row">
-              <label class="friends-label" for="code">Join a room</label>
-              <div class="join-line">
-                <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
-                <button id="join" class="btn secondary" type="button">Join room</button>
-              </div>
-              <p class="opt-hint">Have a four-letter code? Enter it here.</p>
-            </div>
-          </div>
-        </details>
       </div>
 
       <!-- Wallet and transactions -->
@@ -281,6 +256,37 @@
       </section>
     </section>
   </main>
+
+  <!-- Create / join a room -->
+  <div id="roomModal" class="result-overlay room-modal" role="dialog" aria-modal="true" aria-labelledby="roomModalTitle" hidden>
+    <div class="join-card result-card room-card">
+      <button id="closeRoomModal" class="btn ghost result-close" type="button">Close</button>
+      <h2 id="roomModalTitle" class="step-title">Play with friends</h2>
+      <div class="friends-body">
+        <div class="friends-row">
+          <span class="friends-label">Create a room</span>
+          <fieldset class="opt-group size-group">
+            <legend class="sr-only">Players in the room</legend>
+            <div class="pills cols-3">
+              <label><input type="radio" name="size" value="5" checked><span>5</span></label>
+              <label><input type="radio" name="size" value="10"><span>10</span></label>
+              <label><input type="radio" name="size" value="15"><span>15</span></label>
+            </div>
+          </fieldset>
+          <button id="create" class="btn secondary" type="button">Create room</button>
+          <p class="opt-hint">Players in the room. You get a code to share.</p>
+        </div>
+        <div class="friends-row">
+          <label class="friends-label" for="code">Join a room</label>
+          <div class="join-line">
+            <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
+            <button id="join" class="btn secondary" type="button">Join room</button>
+          </div>
+          <p class="opt-hint">Have a four-letter code? Enter it here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div id="toast" role="status" aria-live="polite"></div>
 
