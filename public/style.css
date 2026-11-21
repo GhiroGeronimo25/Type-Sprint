@@ -1063,3 +1063,8 @@ body { padding-top: var(--nav-space, 0px); }
 .badge-practice { display: inline-block; padding: 0 0.4rem; border-radius: 999px; background: #0a8f62; color: #fff; font-size: 0.7rem; font-weight: 800; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .practice-ind .dot { animation: none; } }
+
+/* room size picker (create room) */
+.size-group { margin-bottom: 0.5rem; }
+.size-group .seg small { display: block; }
+@media (max-width: 640px) { .size-group .seg small { display: none; } }

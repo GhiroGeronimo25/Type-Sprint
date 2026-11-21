@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=42">
+  <link rel="stylesheet" href="style.css?v=43">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -103,7 +103,7 @@
             </div>
           </div>
           <ul class="auth-perks">
-            <li><b>Live races</b><span>Up to 5 racers, scored by the server so it stays fair.</span></li>
+            <li><b>Live races</b><span>Up to 5 racers in quick match (up to 15 in your own rooms), scored by the server so it stays fair.</span></li>
             <li><b>Win coins</b><span>Ranked races pay out the top three finishers.</span></li>
             <li><b>Climb the board</b><span>Your rating moves with every race you finish.</span></li>
           </ul>
@@ -115,7 +115,7 @@
     <!-- Home -->
     <section id="home" class="screen" data-tab="play" hidden>
       <h1 class="hero-title" data-pane="play">Type Sprint</h1>
-      <span class="sticker" data-pane="play">Up to 5 racers<br>live scoring</span>
+      <span class="sticker" data-pane="play">Up to 15 racers<br>live scoring</span>
 
       <div class="join-card" data-pane="play">
 
@@ -154,6 +154,14 @@
 
           <div class="start-split">
             <div class="start-option">
+              <fieldset class="seg-group size-group">
+                <legend>Room size (create room only)</legend>
+                <div class="seg cols-3">
+                  <label><input type="radio" name="size" value="5" checked><span><b>5</b><small>players</small></span></label>
+                  <label><input type="radio" name="size" value="10"><span><b>10</b><small>players</small></span></label>
+                  <label><input type="radio" name="size" value="15"><span><b>15</b><small>players</small></span></label>
+                </div>
+              </fieldset>
               <button id="create" class="btn secondary big" type="button">Create room</button>
               <p class="muted">Host a room and share the code with friends.</p>
             </div>
@@ -278,6 +286,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="account.js?v=1"></script>
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=36"></script>
 </body>
 </html>

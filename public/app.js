@@ -389,8 +389,13 @@ function onMatchStatus(data) {
     (data.searching === 1 ? ' player' : ' players') + ' searching';
 }
 
+function roomSize() {
+  const size = document.querySelector('input[name="size"]:checked');
+  return size ? Number(size.value) : 5;
+}
+
 function createRoom() {
-  emitWithFeedback('room:create', raceSettings(), onEntered);
+  emitWithFeedback('room:create', Object.assign(raceSettings(), { maxPlayers: roomSize() }), onEntered);
 }
 
 function joinRoom() {
@@ -650,6 +655,7 @@ function renderPanel(room, me, rank) {
   if (room.status === 'lobby') {
     html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2>' +
       '<p class="share-line">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' +
+      (room.maxPlayers ? '<p class="fine">' + room.players.length + ' of ' + room.maxPlayers + ' seats taken.</p>' : '') +
       '<p class="fine">' + (room.ranked
         ? 'Ranked: ' + room.fee + ' coins per racer, rating changes. Leaving after the start forfeits your fee. Alone = free practice.'
         : 'Casual: free to play. No coins or rating changes.') + '</p>';
