@@ -27,13 +27,13 @@ module.exports = function (app, accounts, requireLogin) {
   }, 60000).unref();
 
   const AUTH_ERRORS = { // what accounts.js reports -> [status, what the caller is told]
-    invalid_credentials: [401, 'Incorrect email or password. Check both and try again.'],
-    email_taken: [409, 'That email already has an account. Try logging in instead.'],
-    username_taken: [409, 'That username is taken. Try another one.'],
-    weak_password: [422, 'That password is too weak. Use at least 8 characters and avoid common passwords.'],
-    unconfirmed: [403, 'Your email isn\u2019t confirmed yet. Open the link we emailed you, then log in.'],
+    invalid_credentials: [401, 'Incorrect email or password.'],
+    email_taken: [409, 'That email already has an account.'],
+    username_taken: [409, 'That username is taken.'],
+    weak_password: [422, 'That password is too weak.'],
+    unconfirmed: [403, 'Your email isn\u2019t confirmed yet.'],
     invalid_refresh: [401, 'Your session expired. Please log in again.'],
-    rate_limited: [429, 'Too many attempts. Wait a minute, then try again.'],
+    rate_limited: [429, 'Too many attempts. Try again later.'],
     not_configured: [503, 'Login isn\u2019t available right now. Please try again later.'],
   };
 
