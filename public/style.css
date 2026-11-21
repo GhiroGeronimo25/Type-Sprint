@@ -1187,3 +1187,18 @@ body { padding-top: var(--nav-space, 0px); }
 /* only show the message that belongs to the form currently in view */
 #auth .auth-card[data-mode="login"] ~ .auth-msgs #signupMsg,
 #auth .auth-card[data-mode="signup"] ~ .auth-msgs #loginMsg { display: none; }
+
+.code[hidden] { display: none; }
+.btn.danger { color: #b42318; border-color: #b42318; }
+
+/* ---------- Results: a small box at the bottom of the room, not a full-screen popup ---------- */
+.result-overlay {
+  inset: auto 0 0 0; display: flex; justify-content: center; align-items: flex-end;
+  padding: 0 0.75rem 0.75rem; background: none; backdrop-filter: none; pointer-events: none;
+}
+.result-card {
+  pointer-events: auto; width: min(22rem, 100%); max-height: 45vh; padding: 0.8rem 1rem;
+  font-size: 0.9rem; box-shadow: 4px 4px 0 var(--ink);
+}
+.result-card h2 { font-size: 1.1rem; margin: 0 0 0.3rem; padding-right: 4.5rem; }
+.result-card p { margin: 0.25rem 0; }

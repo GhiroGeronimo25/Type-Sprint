@@ -157,6 +157,7 @@ function findById(room, id) {
 }
 
 function pickHost(room) {
+  if (!room.custom) return null; // ranked and casual rooms have no host: nobody starts or restarts a race
   return (room.players.find(function (p) { return !p.away; }) || room.players[0]).id;
 }
 
@@ -614,16 +615,15 @@ function matchDeadline(room) {
   room.matchPids = null;
   if (room.players.length === 0) { delete rooms[room.code]; return; }
   if (room.players.length >= 2) return startMatchedRace(room);
-  room.listed = true;
-  io.to(room.code).emit('race:notice', { message: 'Your opponents did not connect in time. Wait here or leave.' });
-  broadcast(room);
+  io.to(room.code).emit('race:notice', { message: 'Your opponents did not connect in time. Racing alone as practice.' });
+  startMatchedRace(room);
 }
 
 function startMatch(group) {
   const first = group.filter(function (t) { return t.socket; })[0];
   const waiting = group.filter(function (t) { return !t.socket; }); // REST searchers: they still have to connect
   const room = {
-    code: randomCode(), hostId: first ? first.socket.id : null, ranked: group[0].ranked, difficulty: group[0].difficulty, maxPlayers: MAX_PLAYERS,
+    code: randomCode(), hostId: null, ranked: group[0].ranked, difficulty: group[0].difficulty, maxPlayers: MAX_PLAYERS,
     status: 'lobby', text: '', startAt: 0, players: [], listed: false, createdAt: Date.now(), // quick-match rooms start at once: not listed
   };
   if (waiting.length > 0) room.matchPids = group.map(function (t) { return t.pid; });
@@ -804,7 +804,7 @@ function onConnection(socket) {
     const started = room && (room.starting || ((room.status === 'countdown' || room.status === 'racing') && !room.practice));
     let error = '';
     if (socket.data.code) error = 'You are already in a room.';
-    else if (!room) error = 'No room with code ' + code + '.';
+    else if (!room || (!room.custom && !existing && !room.matchPids)) error = 'No room with code ' + code + '.';
     else if (existing && started) error = 'You are already in this race. Reload the page to get back in.';
     else if (existing) {
       rebind(socket, room, existing);
@@ -819,7 +819,7 @@ function onConnection(socket) {
       room.reservedHost = null;
       clearTimeout(room.reserveTimer);
       room.hostId = socket.id;
-    } else if (room.matchPids && !findById(room, room.hostId)) room.hostId = socket.id;
+    }
     delete matchResults[pid];
     const player = joinRoom(socket, room, socket.data.name, pid);
     try {
@@ -859,7 +859,7 @@ function onConnection(socket) {
   }
   async function onStart() {
     const room = rooms[socket.data.code];
-    if (!room || room.hostId !== socket.id) return; // only the host starts races
+    if (!room || !room.custom || room.hostId !== socket.id) return; // only a custom room's host starts races
     if (room.status !== 'lobby' && room.status !== 'finished') return;
     if (room.starting) return;
     if (room.settling) return socket.emit('race:notice', { message: 'Still paying out the last race. Try again in a second.' });
@@ -868,7 +868,7 @@ function onConnection(socket) {
   }
   function onToLobby() {
     const room = rooms[socket.data.code];
-    if (!room || room.hostId !== socket.id) return;
+    if (!room || !room.custom || room.hostId !== socket.id) return;
     if (room.starting || room.settling) return;
     const practice = !!room.practice;
     if (!(room.status === 'finished' || (practice && (room.status === 'countdown' || room.status === 'racing')))) return;

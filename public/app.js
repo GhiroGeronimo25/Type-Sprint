@@ -373,7 +373,6 @@ function onEntered(result) {
   if (!result || !result.ok) return showToast(result && result.error ? result.error : 'Something went wrong. Please try again.');
   showSearching(false);
   localStorage.setItem('session', result.code);
-  history.replaceState(null, '', '?room=' + result.code);
   showScreen('room');
 }
 
@@ -462,6 +461,9 @@ function onHomeKey(event) {
 }
 
 function leaveRoom() {
+  const r = state.room;
+  const forfeiting = !!r && r.ranked && !r.custom && !r.practice && (r.status === 'countdown' || r.status === 'racing');
+  if (forfeiting && !window.confirm('Forfeit this ranked race? Your ' + r.fee + '-coin entry fee stays in the pot.')) return;
   localStorage.removeItem('session');
   socket.emit('room:leave');
   goHome();
@@ -562,7 +564,6 @@ function onRejoined(result) {
   state.restore = $('typing').disabled ? result.input : '';
   state.result = result.result || null;
   if (state.text) buildPassage();
-  history.replaceState(null, '', '?room=' + result.code);
   showScreen('room');
   if (state.room) {
     showToast('Back in the room');
@@ -604,6 +605,14 @@ function render() {
     finished: practice ? 'Practice finished' : 'Race finished',
   };
   $('roomCode').textContent = room.code;
+  // Only custom rooms are joined by code, so only they show it (and the invite link).
+  $('copyLink').hidden = !room.custom;
+  if (room.custom) history.replaceState(null, '', '?room=' + room.code);
+  else if (location.search) history.replaceState(null, '', location.pathname + location.hash);
+  // Ranked: once the fee is in play, quitting is a forfeit. Casual and custom: plain leave.
+  const atStake = room.ranked && !room.custom && !practice && !inLobby && (room.status === 'countdown' || room.status === 'racing');
+  $('leave').textContent = atStake ? 'Forfeit' : 'Leave room';
+  $('leave').classList.toggle('danger', atStake);
   $('status').textContent = '';
   const main = document.createElement('span');
   main.textContent = inLobby ? 'In the lobby' : labels[room.status];
@@ -708,7 +717,9 @@ function renderPanel(room, me, rank) {
     wirePanel();
     return;
   }
-  if (room.status === 'lobby') {
+  if (room.status === 'lobby' && !room.custom) {
+    html = '<h2>Starting your race...</h2>'; // matched rooms start by themselves: no lobby, no host
+  } else if (room.status === 'lobby') {
     html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2>' +
       '<p class="share-line">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' +
       (room.maxPlayers ? '<p class="fine">' + room.players.length + ' of ' + room.maxPlayers + ' seats taken.</p>' : '') +
@@ -747,10 +758,11 @@ function renderPanel(room, me, rank) {
       html += resultHtml(me);
       if (!room.ranked && !room.custom) html += '<p class="muted">Casual race: no coins or rating changed.</p>';
     }
-    html += difficultyHtml(room, isHost);
-    const waitingNames = room.players.filter(function (p) { return p.lobby; }).map(function (p) { return esc(p.name); });
+    if (room.custom) html += difficultyHtml(room, isHost);
+    const waitingNames = !room.custom ? [] : room.players.filter(function (p) { return p.lobby; }).map(function (p) { return esc(p.name); });
     if (waitingNames.length > 0) html += '<p class="muted">' + waitingNames.join(', ') + (waitingNames.length === 1 ? ' is' : ' are') + ' waiting in the lobby.</p>';
-    if (isHost) html += '<button id="start" class="btn" type="button">' + (waitingNames.length > 0 ? 'Start race' : practice ? 'Practice again' : 'Race again') + '</button>';
+    if (!room.custom) html += '<p class="muted">Want another race? Leave and press Quick match again.</p>';
+    else if (isHost) html += '<button id="start" class="btn" type="button">' + (waitingNames.length > 0 ? 'Start race' : practice ? 'Practice again' : 'Race again') + '</button>';
     else html += '<p>Waiting for the host to start another race.</p>';
   }
   const finished = room.status === 'finished';
