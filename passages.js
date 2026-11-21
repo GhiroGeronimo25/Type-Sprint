@@ -95,6 +95,11 @@ function pick(difficulty, previous) {
   return options[Math.floor(Math.random() * options.length)];
 }
 
+// A random difficulty level (custom rooms mix easy, medium and hard passages).
+function randomLevel() {
+  return DIFFICULTIES[Math.floor(Math.random() * DIFFICULTIES.length)];
+}
+
 // ---------- read-only description of the bank, for the REST API ----------
 // The API never returns a passage's full text: players must not be able to read (or memorise) the text
 // before a race. It describes the bank instead: sizes, and a short preview of how each passage starts.
@@ -128,4 +133,4 @@ function describe(level) {
   });
 }
 
-module.exports = { summary: summary, describe: describe, DEFAULT_DIFFICULTY: DEFAULT_DIFFICULTY, isDifficulty: isDifficulty, pick: pick };
+module.exports = { summary: summary, describe: describe, DEFAULT_DIFFICULTY: DEFAULT_DIFFICULTY, isDifficulty: isDifficulty, pick: pick, randomLevel: randomLevel };

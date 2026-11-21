@@ -271,7 +271,7 @@ function openRooms() {
     if (here.length === 0) return;
     const host = findById(room, room.hostId) || here[0];
     list.push({
-      code: room.code, host: host.name, ranked: room.ranked, difficulty: room.difficulty,
+      code: room.code, host: host.name, ranked: room.ranked, difficulty: room.custom ? 'random' : room.difficulty,
       practicing: practicing, players: room.players.length, max: roomCap(room), fee: ENTRY_FEE, createdAt: room.createdAt || 0,
     });
   });
@@ -319,7 +319,8 @@ function broadcast(room) {
     startAt: room.startAt,
     serverNow: Date.now(),
     ranked: room.ranked,
-    difficulty: room.difficulty,
+    custom: !!room.custom,
+    difficulty: room.custom ? 'random' : room.difficulty,
     maxPlayers: roomCap(room),
     fee: ENTRY_FEE,
     pot: room.pot || 0,
@@ -369,6 +370,7 @@ async function startRace(room) {
       return 'Nobody has ' + ENTRY_FEE + ' coins for the entry fee.';
     }
   }
+  if (room.custom) room.difficulty = passages.randomLevel(); // custom rooms: a different random passage every race
   room.text = passages.pick(room.difficulty, room.text); // the server chooses: from the room's difficulty, never the same passage twice in a row
   room.status = 'countdown';
   room.startAt = Date.now() + COUNTDOWN_MS;
@@ -701,8 +703,8 @@ app.post('/api/rooms', requireLogin, function (req, res) {
   if (roomOfPid(pid) || reservedRoomOf(pid)) return res.status(409).json({ error: 'You already have a room. Leave it first.' });
   if (matchmaker.has(pid) || matchFor(pid)) return res.status(409).json({ error: 'You are in matchmaking. Cancel it first.' });
   const room = {
-    code: randomCode(), hostId: null, reservedHost: pid, ranked: body.ranked !== false,
-    difficulty: body.difficulty || passages.DEFAULT_DIFFICULTY, maxPlayers: body.maxPlayers || MAX_PLAYERS,
+    code: randomCode(), hostId: null, reservedHost: pid, ranked: false, custom: true,
+    difficulty: passages.DEFAULT_DIFFICULTY, maxPlayers: body.maxPlayers || MAX_PLAYERS,
     status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now(),
   };
   rooms[room.code] = room;
@@ -777,11 +779,11 @@ function onConnection(socket) {
   socket.data.code = null;
   async function onCreate(data, ack) {
     if (typeof ack !== 'function') return;
+    if (socket.data.code && !rooms[socket.data.code]) socket.data.code = null; // stale: that room is gone
     if (socket.data.code) return ack({ ok: false, error: 'You are already in a room. Leave it first.' });
-    const ranked = (data || {}).ranked !== false; // ranked unless the host picked casual
-    const difficulty = passages.isDifficulty((data || {}).difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY; // anything else becomes the default
     const maxPlayers = isRoomSize((data || {}).maxPlayers) ? data.maxPlayers : MAX_PLAYERS; // anything else becomes the default
-    const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, maxPlayers: maxPlayers, status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now() };
+    const room = { code: randomCode(), hostId: socket.id, ranked: false, custom: true, difficulty: passages.DEFAULT_DIFFICULTY, maxPlayers: maxPlayers, // custom rooms are always free and unrated, with random passages
+      status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now() };
     rooms[room.code] = room;
     const player = joinRoom(socket, room, socket.data.name, socket.data.pid);
     try {
@@ -939,7 +941,7 @@ function onConnection(socket) {
   socket.on('lobby:unwatch', function () { socket.leave('lobby'); });
   socket.on('room:difficulty', function (data) {
     const room = rooms[socket.data.code];
-    if (!room || room.hostId !== socket.id) return;
+    if (!room || room.hostId !== socket.id || room.custom) return;
     if (room.status !== 'lobby' && room.status !== 'finished') return;
     if (room.starting || room.settling) return;
     const difficulty = (data || {}).difficulty;

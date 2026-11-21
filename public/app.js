@@ -445,7 +445,10 @@ function roomSize() {
 }
 
 function createRoom() {
-  emitWithFeedback('room:create', Object.assign(raceSettings(), { maxPlayers: roomSize() }), onEntered);
+  const button = $('create');
+  button.disabled = true;
+  const enable = function () { button.disabled = false; };
+  emitWithFeedback('room:create', { maxPlayers: roomSize() }, function (res) { enable(); onEntered(res); }, enable);
 }
 
 function joinRoom() {
@@ -673,6 +676,7 @@ function capital(word) {
 }
 
 function difficultyHtml(room, isHost) {
+  if (room.custom) return '<p class="muted">Passages: random every race</p>';
   if (!isHost) return '<p class="muted">Difficulty: ' + capital(room.difficulty) + '</p>';
   let html = '<div class="difficulty" role="group" aria-label="Passage difficulty"><span class="muted">Difficulty</span>';
   ['easy', 'medium', 'hard'].forEach(function (level) {
