@@ -1161,10 +1161,12 @@ body { padding-top: var(--nav-space, 0px); }
 #auth .auth-msg.info::before { content: "i"; background: var(--cobalt); }
 #auth input[aria-invalid="true"] { border-color: #c0261b; background: #fff7f6; }
 
-/* ---------- Create / join room overlay (opened from the header) ---------- */
-
-.room-card { width: min(30rem, 100%); }
-.room-card .step-title { padding-right: 5rem; }
-.room-card .friends-body { margin-top: 0.4rem; }
-.room-btn { padding: 0.45rem 1.1rem; font-size: 1rem; white-space: nowrap; }
-@media (max-width: 760px) { .user-bar .room-btn { font-size: 0.85rem; padding: 0.25rem 0.7rem; min-height: 36px; } }
+/* ---------- Create / join room panel (home, top right) ---------- */
+.room-panel .friends-body { margin-top: 0.4rem; }
+@media (min-width: 1000px) {
+  /* wireframe: Choose race | Create/join room on top, Open rooms full width below */
+  #home[data-tab="play"] { align-items: stretch; row-gap: 2rem; }
+  #home[data-tab="play"] .room-panel { grid-column: 2; grid-row: 2; max-width: none; margin: 0; }
+  #home[data-tab="play"] .lobby { grid-column: 1 / -1; grid-row: 3; align-self: start; }
+  #home[data-tab="play"] .lobby-list { max-height: 22rem; }
+}
