@@ -1089,3 +1089,15 @@ body { padding-top: var(--nav-space, 0px); }
   .start-card .seg span { padding: 0.5rem 0.3rem; }
   .start-card #code { padding: 0.55rem 0.4rem; font-size: 1rem; }
 }
+
+/* ---------- Searching: replaces the Quick match button instead of adding a second box ---------- */
+.btn[hidden], .muted[hidden] { display: none; }
+.start-option .searching { margin: 0; padding: 0.7rem 0.7rem 0.7rem 1.2rem; min-height: 3.4rem; box-shadow: 4px 4px 0 var(--ink); border-radius: 12px; font-size: 1.05rem; }
+.search-label { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+.search-dot { flex: none; width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--ink); animation: search-pulse 1s ease-in-out infinite; }
+@keyframes search-pulse { 50% { transform: scale(0.55); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .search-dot { animation: none; } }
+@media (max-width: 560px) {
+  .start-option .searching { padding: 0.45rem 0.5rem 0.45rem 0.8rem; min-height: 0; font-size: 0.85rem; box-shadow: 3px 3px 0 var(--ink); }
+  .start-option .searching .btn { padding: 0.4rem 0.8rem; }
+}

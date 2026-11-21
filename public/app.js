@@ -360,8 +360,9 @@ function emitWithFeedback(event, payload, handler, onFail) {
 
 // ---------- quick match ----------
 function showSearching(on) {
-  $('searching').hidden = !on;
-  $('quick').disabled = on;
+  $('searching').hidden = !on; // the searching bar takes the place of the Quick match button
+  $('quick').hidden = on;
+  $('quickHint').hidden = on;
   if (on) $('searchText').textContent = 'Searching for opponents...';
 }
 

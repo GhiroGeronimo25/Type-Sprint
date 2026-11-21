@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=44">
+  <link rel="stylesheet" href="style.css?v=45">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -145,11 +145,11 @@
 
           <div class="start-option">
             <button id="quick" class="btn big" type="button">Quick match</button>
-            <p class="muted">Instantly find opponents with a similar rating.</p>
-          </div>
-          <div id="searching" class="searching" role="status" aria-live="polite" hidden>
-            <span id="searchText">Searching for opponents...</span>
-            <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
+            <div id="searching" class="searching" role="status" aria-live="polite" hidden>
+              <span class="search-label"><i class="search-dot" aria-hidden="true"></i><span id="searchText">Searching for opponents...</span></span>
+              <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
+            </div>
+            <p id="quickHint" class="muted">Instantly find opponents with a similar rating.</p>
           </div>
 
           <div class="start-or" aria-hidden="true"><span>or play with friends</span></div>
@@ -292,6 +292,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="account.js?v=1"></script>
-  <script src="app.js?v=36"></script>
+  <script src="app.js?v=37"></script>
 </body>
 </html>
