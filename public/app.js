@@ -73,15 +73,18 @@ function showAuthMessage(text, isError) {
 let authMode = 'login';
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
 
+function authLabel() { return authMode === 'signup' ? 'Create account' : 'Log in'; }
+
 function setAuthMode(mode) {
   authMode = mode;
   showAuthMessage('');
   const signup = mode === 'signup';
-  $('authTitle').textContent = signup ? 'Create account' : 'Log in';
+  $('authTitle').textContent = signup ? 'Create your account' : 'Welcome back';
   $('usernameRow').hidden = !signup;
-  $('authSubmit').textContent = signup ? 'Create account' : 'Log in';
-  $('authSwitchText').textContent = signup ? 'Already have an account?' : 'New here?';
-  $('authSwitch').textContent = signup ? 'Log in' : 'Create an account';
+  $('pwHint').hidden = !signup;
+  $('authSubmit').textContent = authLabel();
+  $('tabLogin').setAttribute('aria-selected', String(!signup));
+  $('tabSignup').setAttribute('aria-selected', String(signup));
   $('authPassword').autocomplete = signup ? 'new-password' : 'current-password';
 }
 
@@ -92,6 +95,7 @@ async function onAuthSubmit(event) {
   const password = $('authPassword').value;
   if (!email || password.length < 8) return showAuthMessage('Enter an email and a password of at least 8 characters.', true);
   $('authSubmit').disabled = true;
+  $('authSubmit').textContent = 'Please wait...';
   try {
     if (authMode === 'login') {
       const res = await postJson('/api/auth/login', { email: email, password: password });
@@ -115,6 +119,7 @@ async function onAuthSubmit(event) {
     showAuthMessage('Could not reach the server. Please try again.', true);
   } finally {
     $('authSubmit').disabled = false;
+    $('authSubmit').textContent = authLabel();
   }
 }
 
@@ -143,7 +148,20 @@ function onAuthChange() {
 
 function startAuth() {
   $('authForm').addEventListener('submit', onAuthSubmit);
-  $('authSwitch').addEventListener('click', function () { setAuthMode(authMode === 'login' ? 'signup' : 'login'); });
+  ['login', 'signup'].forEach(function (mode) {
+    $(mode === 'login' ? 'tabLogin' : 'tabSignup').addEventListener('click', function () {
+      if (authMode === mode) return;
+      setAuthMode(mode);
+      $(mode === 'signup' ? 'authUsername' : 'authEmail').focus();
+    });
+  });
+  $('togglePw').addEventListener('click', function () {
+    const show = $('authPassword').type === 'password';
+    $('authPassword').type = show ? 'text' : 'password';
+    $('togglePw').textContent = show ? 'Hide' : 'Show';
+    $('togglePw').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    $('togglePw').setAttribute('aria-pressed', String(show));
+  });
   $('signOut').addEventListener('click', onSignOut);
   try { auth = JSON.parse(localStorage.getItem(AUTH_KEY)); } catch (e) { auth = null; }
   if (!auth || !auth.session || !auth.user) auth = null;
