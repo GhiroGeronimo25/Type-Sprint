@@ -4,45 +4,12 @@
 // ---------- race history (REST API: GET /api/races) ----------
 const races_ = { items: [], hasMore: false, loading: false };
 
-const LOCAL_RACES_KEY = 'casualRaces';
-
-function loadLocalRaces() {
-  try {
-    const list = JSON.parse(localStorage.getItem(LOCAL_RACES_KEY));
-    return Array.isArray(list) ? list : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function saveLocalRace(room, me, rank) {
-  if (room.status !== 'finished' || !me.entered) return;
-  if (room.ranked && !room.practice) return; // real ranked races are saved on the account
-  if (!me.finished && me.wpm === 0) return;
-  const id = room.code + ':' + room.startAt;
-  const list = loadLocalRaces();
-  if (list.some(function (r) { return r.id === id; })) return;
-  list.unshift({
-    id: id, endedAt: new Date().toISOString(), room: room.code, rank: rank,
-    wpm: me.wpm, accuracy: me.accuracy, finished: me.finished, progress: me.progress,
-    seconds: me.finished ? Math.round(me.finishMs / 100) / 10 : null,
-    kind: room.practice ? 'Practice' : 'Casual',
-  });
-  try { localStorage.setItem(LOCAL_RACES_KEY, JSON.stringify(list.slice(0, 30))); } catch (e) { /* storage can be blocked */ }
-  renderRaceHistory();
-}
+// Ranked and casual races are both saved on the server (custom rooms are never listed).
+try { localStorage.removeItem('casualRaces'); } catch (e) { /* storage can be blocked */ } // old browser-only history, including custom-room runs
+function saveLocalRace() { /* nothing to do in the browser any more */ }
 
 function mergedRaces() {
-  const server = races_.items;
-  const oldest = server.length ? Date.parse(server[server.length - 1].endedAt) : Infinity;
-  const local = loadLocalRaces().filter(function (l) {
-    const t = Date.parse(l.endedAt);
-    if (races_.hasMore && t < oldest) return false; // older than the page on screen: shows up after "Show more"
-    return !server.some(function (r) { // a ranked practice run the server already lists
-      return r.room === l.room && Math.abs(Date.parse(r.endedAt) - t) < 5 * 60 * 1000;
-    });
-  }).map(function (l) { return Object.assign({}, l, { local: true }); });
-  return server.concat(local).sort(function (a, b) { return Date.parse(b.endedAt) - Date.parse(a.endedAt); });
+  return races_.items;
 }
 
 function renderRaceHistory() {
@@ -54,7 +21,7 @@ function renderRaceHistory() {
     const r = items[i];
     const when = new Date(r.endedAt).toLocaleString(undefined, ledgerTime);
     const time = r.seconds === null ? 'DNF' : r.seconds + 's';
-    if (r.local) {
+    if (r.casual) {
       html += '<li><span class="place">' + (r.kind === 'Practice' ? '\u2014' : ordinal(r.rank)) + '</span>' +
         '<span><b>' + r.wpm + '</b> wpm</span>' +
         '<span>' + r.accuracy + '%<span class="lbl"> acc</span></span>' +

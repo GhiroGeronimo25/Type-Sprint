@@ -2,7 +2,7 @@
 // REST API: wallet, race history, stats, leaderboard and the passage bank. Every route except the passage bank
 // needs the login token (Authorization: Bearer <token>); the player is always the logged-in user.
 
-module.exports = function (app, accounts, passages) {
+module.exports = function (app, accounts, passages, casualRacesFor) {
   function pageParams(req) {
     const q = req.query || {};
     return {
@@ -63,8 +63,15 @@ module.exports = function (app, accounts, passages) {
   // ---------- REST API: race history ----------
   app.get('/api/races', requireLogin, function (req, res) {
     const page = pageParams(req);
-    respond(res, accounts.raceHistory(req.user.id, page.offset, page.limit), 'Could not load your race history', function (r) {
-      return { items: r.items, hasMore: r.hasMore, offset: page.offset, limit: page.limit };
+    const end = page.offset + page.limit;
+    // ranked races (database) and casual ones (server file) are merged, newest first
+    accounts.raceHistory(req.user.id, 0, end).then(function (ranked) {
+      const casual = casualRacesFor ? casualRacesFor(req.user.id) : [];
+      const all = ranked.items.concat(casual).sort(function (a, b) { return Date.parse(b.endedAt) - Date.parse(a.endedAt); });
+      res.json({ items: all.slice(page.offset, end), hasMore: all.length > end || ranked.hasMore, offset: page.offset, limit: page.limit });
+    }).catch(function (e) {
+      console.error('Could not load your race history:', e.message);
+      res.status(500).json({ error: 'Could not load your race history.' });
     });
   });
 

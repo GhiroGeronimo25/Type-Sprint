@@ -36,7 +36,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const RESULTS_FILE = path.join(DATA_DIR, 'results.json');
 const accounts = createAccounts(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, process.env.SUPABASE_ANON_KEY);
 const ENTRY_FEE = accounts.ENTRY_FEE;
-const requireLogin = require('./api-data')(app, accounts, passages).requireLogin; // wallet, races, stats, leaderboard, passages
+const requireLogin = require('./api-data')(app, accounts, passages, casualRacesFor).requireLogin; // wallet, races, stats, leaderboard, passages
 require('./api-auth')(app, accounts, requireLogin);                             // sign-up, login, refresh, logout, profile
 
 // Sign-ups that never confirm their email are deleted (login and address) once the confirmation link has expired.
@@ -82,6 +82,25 @@ function saveResults() {
   });
 }
 
+// A player's casual and practice races for their account history (custom rooms are never listed).
+function casualRacesFor(pid) {
+  const items = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.custom) continue;
+    for (let j = 0; j < r.players.length; j++) {
+      const p = r.players[j];
+      if (p.pid !== pid) continue;
+      items.push({
+        id: 'c' + i + '-' + j, casual: true, kind: r.practice ? 'Practice' : 'Casual', room: r.room, ranked: false, endedAt: r.endedAt,
+        rank: p.rank, wpm: p.wpm, accuracy: p.accuracy, finished: p.finished, progress: p.progress, seconds: p.seconds,
+        payout: 0, net: 0, ratingBefore: null, ratingAfter: null,
+      });
+    }
+  }
+  return items;
+}
+
 function recordRace(room) {
   let anyone = false;
   const players = [];
@@ -98,11 +117,12 @@ function recordRace(room) {
       finished: p.finished,
       progress: Math.round((p.correct / room.text.length) * 1000) / 10,
       seconds: p.finished ? Math.round((p.finishedAt - room.startAt) / 100) / 10 : null,
+      pid: p.pid || null, // lets the race show up in that player's own history
     });
   }
   if (!anyone) return;
-  results.push({ room: room.code, ranked: room.ranked, difficulty: room.difficulty, endedAt: new Date().toISOString(), text: room.text, players: players });
-  if (results.length > 500) results = results.slice(-500);
+  results.push({ room: room.code, ranked: room.ranked, custom: !!room.custom, practice: entrants.length === 1, difficulty: room.difficulty, endedAt: new Date().toISOString(), text: room.text, players: players });
+  if (results.length > 5000) results = results.slice(-5000);
   saveResults();
 }
 
@@ -113,7 +133,9 @@ app.get('/api/results', function (req, res) {
   }).then(function (ranked) {
     const all = ranked.concat(results.slice(-50)); // ranked from the database, casual from the local file
     all.sort(function (a, b) { return String(b.endedAt).localeCompare(String(a.endedAt)); });
-    res.json(all.slice(0, 50));
+    res.json(all.slice(0, 50).map(function (r) {
+      return Object.assign({}, r, { players: (r.players || []).map(function (p) { const q = Object.assign({}, p); delete q.pid; return q; }) });
+    }));
   });
 });
 

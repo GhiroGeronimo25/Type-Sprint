@@ -214,7 +214,7 @@
       <!-- Ranked race history (from the REST API) -->
       <section id="raceHistory" class="records" data-pane="stats" hidden>
         <div class="records-head"><h2>Race history</h2></div>
-        <p class="wallet-note">Ranked races are saved on your account. Casual and practice races are kept in this browser.</p>
+        <p class="wallet-note">Ranked and casual races are saved on your account. Custom rooms are not listed.</p>
         <ol id="raceList" class="record-list"></ol>
         <button id="raceMore" class="btn ghost" type="button" hidden>Show more</button>
       </section>
@@ -282,6 +282,7 @@
 
         <div id="passage" class="passage" hidden></div>
         <p id="hint" class="hint" hidden>Click the passage if typing stops. Fix a mistake before you move on.</p>
+        <div id="showResultWrap" class="show-result-wrap"></div>
 
         <input id="typing" type="text" autocorrect="off" autocapitalize="none" autocomplete="off" spellcheck="false" inputmode="text" enterkeyhint="done" data-gramm="false" aria-label="Type the passage here" disabled>
       </section>
@@ -291,7 +292,7 @@
   <div id="toast" role="status" aria-live="polite"></div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="account.js?v=1"></script>
-  <script src="app.js?v=44"></script>
+  <script src="account.js?v=2"></script>
+  <script src="app.js?v=45"></script>
 </body>
 </html>

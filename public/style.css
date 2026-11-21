@@ -1201,3 +1201,28 @@ body { padding-top: var(--nav-space, 0px); }
 }
 .result-card h2 { font-size: 1.1rem; margin: 0 0 0.3rem; padding-right: 4.5rem; }
 .result-card p { margin: 0.25rem 0; }
+
+/* ---------- Results: a tidy centred card ---------- */
+.result-overlay {
+  inset: 0; align-items: center; justify-content: center; padding: 1rem;
+  background: rgba(10, 15, 42, 0.6); backdrop-filter: blur(2px); pointer-events: auto; /* dimmed background */
+}
+.result-card {
+  pointer-events: auto; width: min(24rem, 100%); max-height: 80vh; padding: 1.1rem 1.3rem 1.2rem;
+  font-size: 0.95rem; box-shadow: 6px 6px 0 var(--ink);
+}
+.result-card .result-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; }
+.result-card .result-head h2 { margin: 0; padding: 0; font-size: 1.4rem; }
+.result-card .result-close { position: static; flex: none; }
+.result-card p { margin: 0.4rem 0; line-height: 1.4; }
+.result-card .payout { margin: 0.8rem 0; }
+.result-card .payout li { padding: 0.4rem 0; }
+.result-card .muted { color: rgba(10, 15, 42, 0.72); }
+.result-card #start { margin-top: 0.8rem; }
+.result-card .result-leave { width: 100%; margin-top: 0.7rem; }
+.result-card #start + .result-leave { margin-top: 0.6rem; }
+
+/* "Show results" sits under the passage, on the left */
+.show-result-wrap { margin-top: 1.25rem; text-align: left; }
+.show-result-wrap:empty { display: none; }
+.show-result-wrap .btn { background: var(--ink); color: var(--signal); box-shadow: 4px 4px 0 var(--coral); }

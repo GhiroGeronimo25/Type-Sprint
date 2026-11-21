@@ -696,6 +696,7 @@ function difficultyHtml(room, isHost) {
 }
 
 function renderPanel(room, me, rank) {
+  $('showResultWrap').innerHTML = ''; // the Show results button only exists once a race is finished and the card is closed
   const isHost = room.hostId === socket.id;
   const winner = room.players[0];
   const practice = room.players.length === 1; // alone in the room
@@ -768,15 +769,20 @@ function renderPanel(room, me, rank) {
   const finished = room.status === 'finished';
   if (!finished) state.resultDismissed = false;
   if (finished) {
-    html += '<button id="closeResult" class="btn ghost result-close" type="button">Close</button>';
+    html += '<button id="leaveResult" class="btn ghost result-leave" type="button">Leave room</button>';
+    // the Close button shares a row with the title, so it never sits on top of the text
+    html = html.replace(/^(<h2>[\s\S]*?<\/h2>)/, '<div class="result-head">$1' +
+      '<button id="closeResult" class="btn ghost result-close" type="button">Close</button></div>');
     $('resultCard').innerHTML = html;
     $('resultOverlay').hidden = state.resultDismissed;
-    $('panel').innerHTML = state.resultDismissed
+    $('panel').innerHTML = '';
+    $('showResultWrap').innerHTML = state.resultDismissed
       ? '<button id="showResult" class="btn" type="button">Show results</button>' : '';
     if ($('showResult')) $('showResult').addEventListener('click', function () {
       state.resultDismissed = false;
       renderPanel(room, me, rank);
     });
+    if ($('leaveResult')) $('leaveResult').addEventListener('click', leaveRoom);
     if ($('closeResult')) $('closeResult').addEventListener('click', function () {
       state.resultDismissed = true;
       renderPanel(room, me, rank);
