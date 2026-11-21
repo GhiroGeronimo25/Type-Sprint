@@ -1064,7 +1064,28 @@ body { padding-top: var(--nav-space, 0px); }
 @keyframes pulse { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .practice-ind .dot { animation: none; } }
 
-/* room size picker (create room) */
-.size-group { margin-bottom: 0.5rem; }
-.size-group .seg small { display: block; }
-@media (max-width: 640px) { .size-group .seg small { display: none; } }
+/* ---------- Pick how to start: quick match, then two matching cards ---------- */
+.start-or { display: flex; align-items: center; gap: 0.8rem; margin: 1.3rem 0 1rem; color: var(--muted); font-weight: 700; font-size: 0.85rem; }
+.start-or::before, .start-or::after { content: ""; flex: 1; border-top: 2px dashed #d3d8ea; }
+.start-split { align-items: stretch; margin-top: 0; }
+.start-card { display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem 1.1rem 1.1rem; border: var(--line); border-radius: 14px; background: #f7f8fd; }
+.start-card h3 { margin: 0; font-size: 1.15rem; font-weight: 800; font-stretch: 75%; }
+.start-card .muted { margin: 0 0 0.3rem; font-size: 0.85rem; }
+.start-card .seg-group { margin: 0; }
+.start-card .btn.big { margin-top: auto; }
+.start-card .seg { gap: 0.5rem; }
+.start-card .seg span { align-items: center; justify-content: center; padding: 0.7rem 0.4rem; background: var(--white); }
+.start-card .seg label:hover span { background: #fffbe8; }
+.start-card .seg input:checked + span { background: var(--signal); }
+.start-card .seg b { font-size: 1.15rem; }
+.start-card .legend { display: block; margin: 0 0 0.45rem; font-weight: 700; font-size: 0.85rem; color: var(--muted); }
+.start-card #code { width: 100%; box-sizing: border-box; padding: 0.7rem 0.5rem; font-size: 1.15rem; background: var(--white); }
+.start-card .code-group { display: block; }
+@media (max-width: 560px) {
+  .start-or { margin: 0.8rem 0 0.6rem; }
+  .start-card { padding: 0.8rem; gap: 0.4rem; }
+  .start-card h3 { font-size: 1rem; }
+  .start-card .muted { display: none; }
+  .start-card .seg span { padding: 0.5rem 0.3rem; }
+  .start-card #code { padding: 0.55rem 0.4rem; font-size: 1rem; }
+}

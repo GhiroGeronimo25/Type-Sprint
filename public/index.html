@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=43">
+  <link rel="stylesheet" href="style.css?v=44">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -152,25 +152,31 @@
             <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
           </div>
 
+          <div class="start-or" aria-hidden="true"><span>or play with friends</span></div>
+
           <div class="start-split">
-            <div class="start-option">
+            <div class="start-card">
+              <h3>Create a room</h3>
+              <p class="muted">Host a room and share the code.</p>
               <fieldset class="seg-group size-group">
-                <legend>Room size (create room only)</legend>
+                <legend>Players in the room</legend>
                 <div class="seg cols-3">
-                  <label><input type="radio" name="size" value="5" checked><span><b>5</b><small>players</small></span></label>
-                  <label><input type="radio" name="size" value="10"><span><b>10</b><small>players</small></span></label>
-                  <label><input type="radio" name="size" value="15"><span><b>15</b><small>players</small></span></label>
+                  <label><input type="radio" name="size" value="5" checked><span><b>5</b></span></label>
+                  <label><input type="radio" name="size" value="10"><span><b>10</b></span></label>
+                  <label><input type="radio" name="size" value="15"><span><b>15</b></span></label>
                 </div>
               </fieldset>
               <button id="create" class="btn secondary big" type="button">Create room</button>
-              <p class="muted">Host a room and share the code with friends.</p>
             </div>
-            <div class="start-option join-row">
-              <div class="join-inputs">
-                <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="Room code">
-                <button id="join" class="btn secondary" type="button">Join room</button>
-              </div>
+
+            <div class="start-card">
+              <h3>Join a room</h3>
               <p class="muted">Have a four-letter code? Enter it here.</p>
+              <div class="seg-group code-group">
+                <label class="legend" for="code">Room code</label>
+                <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
+              </div>
+              <button id="join" class="btn secondary big" type="button">Join room</button>
             </div>
           </div>
         </div>
