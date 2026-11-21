@@ -79,7 +79,7 @@ function renderRaceHistory() {
 }
 
 async function loadRaceHistory(reset) {
-  if (races_.loading || !supa) return;
+  if (races_.loading || !auth) return;
   races_.loading = true;
   try {
     const res = await apiGet('/api/races?offset=' + (reset ? 0 : races_.items.length));
@@ -95,7 +95,7 @@ async function loadRaceHistory(reset) {
 
 async function loadStats() {
   loadRaceHistory(true);
-  if (!supa) return;
+  if (!auth) return;
   try {
     const both = await Promise.all([apiGet('/api/stats'), apiGet('/api/leaderboard?limit=20')]);
     if (!both[0].ok || !both[1].ok) throw new Error('HTTP ' + both[0].status + '/' + both[1].status);

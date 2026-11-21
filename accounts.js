@@ -87,8 +87,10 @@ function createAccounts(url, serviceKey, anonKey) {
 
   // creates the login; the database trigger creates the game account (with the welcome coins) from the username.
   // Resolves to { user, session } where session is null when the project needs the email confirmed first.
-  async function signUp(email, password, username) {
-    const res = await authClient().auth.signUp({ email: email, password: password, options: { data: { username: username } } });
+  async function signUp(email, password, username, redirectTo) {
+    const options = { data: { username: username } };
+    if (redirectTo) options.emailRedirectTo = redirectTo; // Supabase only accepts addresses on its allowed list
+    const res = await authClient().auth.signUp({ email: email, password: password, options: options });
     if (res.error) {
       const e = authError(res.error);
       // "Database error saving new user" is what a username that was taken a moment ago looks like

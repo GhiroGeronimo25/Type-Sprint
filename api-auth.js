@@ -3,17 +3,6 @@
 
 module.exports = function (app, accounts, requireLogin) {
   const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
-  app.get('/api/username-available', function (req, res) {
-    const name = String((req.query || {}).name || '');
-    if (!USERNAME_RE.test(name)) return res.json({ ok: false, error: 'Use 3-16 letters, numbers, dots, dashes or underscores.' });
-    accounts.usernameAvailable(name).then(function (free) {
-      res.json({ ok: free, error: free ? '' : 'That username is taken.' });
-    }).catch(function (e) {
-      console.error('Username check failed:', e.message);
-      res.status(500).json({ ok: false, error: 'Could not check the username. Please try again.' });
-    });
-  });
-
   const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
   const authHits = {}; // 'ip path' -> [timestamps]: the logged-out endpoints can be guessed at, so they get a stricter limit
   const AUTH_LIMIT = Number(process.env.AUTH_LIMIT) || 10;   // tries ...
@@ -71,7 +60,7 @@ module.exports = function (app, accounts, requireLogin) {
     }
     try {
       if (!(await accounts.usernameAvailable(body.username))) return res.status(409).json({ error: 'That username is taken.' });
-      const out = await accounts.signUp(email, body.password, body.username);
+      const out = await accounts.signUp(email, body.password, body.username, typeof body.redirectTo === 'string' ? body.redirectTo.slice(0, 200) : '');
       res.status(201).json(out.session ? out : { user: out.user, session: null, message: 'Check your email to confirm your account, then log in.' });
     } catch (e) {
       authFail(res, 'Sign-up', e);

@@ -27,10 +27,6 @@ const io = new socketio.Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '4kb' })); // request bodies for the REST room and matchmaking endpoints
 
-app.get('/config.json', function (req, res) {
-  res.json({ supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '' });
-});
-
 // ---------- saved results (survive restarts) ----------
 const DATA_DIR = path.join(__dirname, 'data');
 const RESULTS_FILE = path.join(DATA_DIR, 'results.json');

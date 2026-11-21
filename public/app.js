@@ -9,32 +9,65 @@ function $(id) {
   return document.getElementById(id);
 }
 
-// ---------- login (Supabase Auth) ----------
-let pid = null;
-let supa = null;
+// ---------- login (REST API: /api/auth/*) ----------
+// The session ({ user, session: { accessToken, refreshToken, expiresAt } }) comes from the server and is kept in
+// localStorage, so a reload stays logged in.
+const AUTH_KEY = 'authSession';
+let auth = null;
+let signedInAs = null;
+let refreshing = null;
+
+function saveAuth() {
+  try {
+    if (auth) localStorage.setItem(AUTH_KEY, JSON.stringify(auth)); else localStorage.removeItem(AUTH_KEY);
+  } catch (e) { /* storage can be blocked */ }
+}
+
+async function postJson(url, body, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  const res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body || {}) });
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* no body */ }
+  return { ok: res.ok, status: res.status, data: data };
+}
+
+// refresh tokens are single use, so only one refresh may run at a time
+async function refreshSession() {
+  const res = await postJson('/api/auth/refresh', { refreshToken: auth.session.refreshToken });
+  if (!res.ok) {
+    if (res.status < 500) { auth = null; saveAuth(); onAuthChange(); } // the login has expired
+    return '';
+  }
+  auth = res.data;
+  saveAuth();
+  return auth.session.accessToken;
+}
 
 async function getAccessToken() {
-  if (!supa) return '';
-  const res = await supa.auth.getSession(); // refreshes an expired token when needed
-  return res.data.session ? res.data.session.access_token : '';
+  if (!auth) return '';
+  const expiresAt = auth.session.expiresAt ? auth.session.expiresAt * 1000 : 0;
+  if (expiresAt - Date.now() > 60000) return auth.session.accessToken;
+  if (!refreshing) refreshing = refreshSession().catch(function () { return auth ? auth.session.accessToken : ''; }).finally(function () { refreshing = null; });
+  return refreshing;
 }
 
 async function apiGet(url) {
   return fetch(url, { headers: { Authorization: 'Bearer ' + await getAccessToken() } });
 }
 
+async function onSignOut() {
+  const token = await getAccessToken();
+  auth = null;
+  saveAuth();
+  onAuthChange();
+  if (token) postJson('/api/auth/logout', {}, token).catch(function () {}); // revokes the login on the server
+}
+
 function showAuthMessage(text, isError) {
   $('authMsg').hidden = !text;
   $('authMsg').textContent = text || '';
   $('authMsg').classList.toggle('error', !!isError);
-}
-
-function friendlyAuthError(error) {
-  const m = String(error && error.message || '');
-  if (/invalid login/i.test(m)) return 'Wrong email or password.';
-  if (/already registered/i.test(m)) return 'That email already has an account. Try logging in.';
-  if (/email not confirmed/i.test(m)) return 'Please confirm your email first (check your inbox).';
-  return m || 'Something went wrong. Please try again.';
 }
 
 let authMode = 'login';
@@ -57,30 +90,27 @@ async function onAuthSubmit(event) {
   showAuthMessage('');
   const email = $('authEmail').value.trim();
   const password = $('authPassword').value;
-  if (!email || password.length < 6) return showAuthMessage('Enter an email and a password of at least 6 characters.', true);
+  if (!email || password.length < 8) return showAuthMessage('Enter an email and a password of at least 8 characters.', true);
   $('authSubmit').disabled = true;
   try {
     if (authMode === 'login') {
-      const res = await supa.auth.signInWithPassword({ email: email, password: password });
-      if (res.error) showAuthMessage(friendlyAuthError(res.error), true);
-      return; // success is handled by onAuthChange
+      const res = await postJson('/api/auth/login', { email: email, password: password });
+      if (!res.ok) return showAuthMessage(res.data.error || 'Something went wrong. Please try again.', true);
+      auth = res.data;
+      saveAuth();
+      return onAuthChange();
     }
     const username = $('authUsername').value.trim();
     if (!USERNAME_RE.test(username)) return showAuthMessage('Username: 3-16 letters, numbers, dots, dashes or underscores.', true);
-    const check = await (await fetch('/api/username-available?name=' + encodeURIComponent(username))).json();
-    if (!check.ok) return showAuthMessage(check.error || 'That username is not available.', true);
-    const res = await supa.auth.signUp({ email: email, password: password, options: { data: { username: username }, emailRedirectTo: window.location.origin } });
-    if (res.error) return showAuthMessage(friendlyAuthError(res.error), true);
-    const created = res.data && res.data.user;
-    if (created && Array.isArray(created.identities) && created.identities.length === 0) {
-      setAuthMode('login');
-      $('authEmail').value = email;
-      return showAuthMessage('That email already has an account. Log in instead.', true);
+    const res = await postJson('/api/auth/signup', { email: email, password: password, username: username, redirectTo: window.location.origin });
+    if (!res.ok) return showAuthMessage(res.data.error || 'Something went wrong. Please try again.', true);
+    if (res.data.session) {
+      auth = res.data;
+      saveAuth();
+      return onAuthChange();
     }
-    if (!res.data.session) {
-      setAuthMode('login');
-      showAuthMessage('Account created. Check your email to confirm it, then log in.', false);
-    }
+    setAuthMode('login'); // with email confirmation switched on there is no session yet
+    showAuthMessage('Account created. Check your email to confirm it, then log in.', false);
   } catch (e) {
     showAuthMessage('Could not reach the server. Please try again.', true);
   } finally {
@@ -88,18 +118,18 @@ async function onAuthSubmit(event) {
   }
 }
 
-function onAuthChange(session) {
-  if (session && session.user) {
-    const changedUser = pid !== session.user.id;
-    pid = session.user.id;
-    const username = (session.user.user_metadata || {}).username || String(session.user.email || '').split('@')[0];
-    $('userEmail').textContent = username;
+// called whenever the login state changes (page load, log in, log out)
+function onAuthChange() {
+  if (auth) {
+    const changedUser = signedInAs !== auth.user.email;
+    signedInAs = auth.user.email;
+    $('userEmail').textContent = auth.user.username || String(auth.user.email || '').split('@')[0];
     $('authPassword').value = '';
     if (changedUser) socket.disconnect(); // a different person logged in: start a fresh connection
     socket.connect();                     // does nothing if already connected
     if (!state.room) showScreen('home');
   } else {
-    pid = null;
+    signedInAs = null;
     localStorage.removeItem('session');
     socket.disconnect();
     state.room = null;
@@ -111,29 +141,16 @@ function onAuthChange(session) {
   }
 }
 
-async function startAuth() {
-  let config;
-  try {
-    config = await (await fetch('/config.json')).json();
-  } catch (e) {
-    config = {};
-  }
-  if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) {
-    showScreen('auth');
-    return showAuthMessage('Login is not set up yet: the server needs SUPABASE_URL and SUPABASE_ANON_KEY.', true);
-  }
-  supa = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+function startAuth() {
   $('authForm').addEventListener('submit', onAuthSubmit);
   $('authSwitch').addEventListener('click', function () { setAuthMode(authMode === 'login' ? 'signup' : 'login'); });
-  $('signOut').addEventListener('click', function () { supa.auth.signOut(); }); // onAuthChange does the rest
-  supa.auth.onAuthStateChange(function (event, session) {
-    if (event === 'TOKEN_REFRESHED') return; // same user: nothing to redo
-    onAuthChange(session);
-  });
-  const first = await supa.auth.getSession();
-  onAuthChange(first.data.session);
+  $('signOut').addEventListener('click', onSignOut);
+  try { auth = JSON.parse(localStorage.getItem(AUTH_KEY)); } catch (e) { auth = null; }
+  if (!auth || !auth.session || !auth.user) auth = null;
+  onAuthChange();
 }
 
+// what the screen remembers between server updates
 const state = { account: null, result: null, room: null, text: '', startAt: 0, limitMs: 60000, offset: 0, chars: [], restore: '', resultDismissed: false };
 
 // ---------- helpers ----------
@@ -461,7 +478,7 @@ socket.on('connect_error', function (err) {
   if (!err || err.message !== 'unauthorized') showToast('Cannot reach the server. Retrying...');
   if (err && err.message === 'unauthorized') {
     showToast('Your login expired. Please log in again.');
-    if (supa) supa.auth.signOut();
+    onSignOut();
   }
 });
 
