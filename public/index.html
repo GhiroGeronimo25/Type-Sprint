@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=38">
+  <link rel="stylesheet" href="style.css?v=39">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -44,7 +44,7 @@
         <label for="authEmail">Email</label>
         <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
         <label for="authPassword">Password</label>
-        <input id="authPassword" type="password" autocomplete="current-password" minlength="6" placeholder="At least 6 characters" required>
+        <input id="authPassword" type="password" autocomplete="current-password" minlength="8" maxlength="72" placeholder="At least 8 characters" required>
         <p id="authMsg" class="auth-msg" role="alert" hidden></p>
         <div class="actions"><button id="authSubmit" class="btn" type="submit">Log in</button></div>
         <p class="auth-switch"><span id="authSwitchText">New here?</span> <button id="authSwitch" class="link" type="button">Create an account</button></p>
@@ -217,6 +217,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="account.js?v=1"></script>
-  <script src="app.js?v=33"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>
