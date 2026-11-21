@@ -345,7 +345,7 @@ function renderLobby(rooms) {
     const r = rooms[i];
     html += '<li class="lobby-row">' +
       '<span class="share-line">' + esc(r.code) + '</span>' +
-      '<span class="lobby-host">' + esc(r.host) + '<small>' + (r.ranked ? 'Ranked \u00b7 ' + r.fee + ' coins' : 'Casual \u00b7 free') + ' \u00b7 ' + esc(capital(r.difficulty)) + (r.practicing ? ' \u00b7 <span class="badge-practice">Practicing now</span>' : '') + '</small></span>' +
+      '<span class="lobby-host">' + esc(r.host) + '<small>' + (r.custom ? 'Custom room \u00b7 random passages' : (r.ranked ? 'Ranked \u00b7 ' + r.fee + ' coins' : 'Casual \u00b7 free') + ' \u00b7 ' + esc(capital(r.difficulty))) + (r.practicing ? ' \u00b7 <span class="badge-practice">Practicing now</span>' : '') + '</small></span>' +
       '<span class="lobby-seats">' + r.players + '/' + r.max + '</span>' +
       '<button class="btn secondary" type="button" data-code="' + esc(r.code) + '">Join</button></li>';
   }
@@ -609,7 +609,7 @@ function render() {
   main.textContent = inLobby ? 'In the lobby' : labels[room.status];
   const extra = document.createElement('span');
   extra.className = 'status-extra';
-  extra.textContent = (practice && room.status !== 'lobby' ? '' : room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual') + ' \u00b7 ' + capital(room.difficulty);
+  extra.textContent = room.custom ? ' \u00b7 Custom room' : ((practice && room.status !== 'lobby' ? '' : room.ranked ? ' \u00b7 Ranked' : ' \u00b7 Casual') + ' \u00b7 ' + capital(room.difficulty));
   $('status').appendChild(main);
   $('status').appendChild(extra);
   $('room').dataset.status = room.status;
@@ -712,7 +712,7 @@ function renderPanel(room, me, rank) {
     html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2>' +
       '<p class="share-line">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' +
       (room.maxPlayers ? '<p class="fine">' + room.players.length + ' of ' + room.maxPlayers + ' seats taken.</p>' : '') +
-      '<p class="fine">' + (room.ranked
+      '<p class="fine">' + (room.custom ? 'Play for fun with friends.' : room.ranked
         ? 'Ranked: ' + room.fee + ' coins per racer, rating changes. Leaving after the start forfeits your fee. Alone = free practice.'
         : 'Casual: free to play. No coins or rating changes.') + '</p>';
     html += difficultyHtml(room, isHost);
@@ -745,7 +745,7 @@ function renderPanel(room, me, rank) {
         : 'Practice run: no coins or rating changed.') + '</p>';
     } else {
       html += resultHtml(me);
-      if (!room.ranked) html += '<p class="muted">Casual race: no coins or rating changed.</p>';
+      if (!room.ranked && !room.custom) html += '<p class="muted">Casual race: no coins or rating changed.</p>';
     }
     html += difficultyHtml(room, isHost);
     const waitingNames = room.players.filter(function (p) { return p.lobby; }).map(function (p) { return esc(p.name); });

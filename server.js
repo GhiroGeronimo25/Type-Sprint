@@ -271,7 +271,7 @@ function openRooms() {
     if (here.length === 0) return;
     const host = findById(room, room.hostId) || here[0];
     list.push({
-      code: room.code, host: host.name, ranked: room.ranked, difficulty: room.custom ? 'random' : room.difficulty,
+      code: room.code, host: host.name, custom: !!room.custom, ranked: room.ranked, difficulty: room.custom ? 'random' : room.difficulty,
       practicing: practicing, players: room.players.length, max: roomCap(room), fee: ENTRY_FEE, createdAt: room.createdAt || 0,
     });
   });
