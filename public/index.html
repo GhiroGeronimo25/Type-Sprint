@@ -23,7 +23,6 @@
         <button type="button" class="navtab" data-nav="board">Leaderboard</button>
       </nav>
       <div id="userBar" class="user-bar">
-        <button id="openRoomModal" class="btn secondary room-btn" type="button" aria-haspopup="dialog" aria-controls="roomModal">Create room</button>
         <span id="coinPill" class="chip" hidden></span>
         <span class="who"><b id="userEmail"></b></span>
         <button id="signOut" class="btn ghost" type="button">Log out</button>
@@ -151,6 +150,34 @@
 
       </div>
 
+      <!-- Create / join a room -->
+      <div class="join-card room-panel" data-pane="play">
+        <h2 class="step-title">Create / join room</h2>
+        <div class="friends-body">
+          <div class="friends-row">
+            <span class="friends-label">Create a room</span>
+            <fieldset class="opt-group size-group">
+              <legend class="sr-only">Players in the room</legend>
+              <div class="pills cols-3">
+                <label><input type="radio" name="size" value="5" checked><span>5</span></label>
+                <label><input type="radio" name="size" value="10"><span>10</span></label>
+                <label><input type="radio" name="size" value="15"><span>15</span></label>
+              </div>
+            </fieldset>
+            <button id="create" class="btn secondary" type="button">Create room</button>
+            <p class="opt-hint">Players in the room. You get a code to share.</p>
+          </div>
+          <div class="friends-row">
+            <label class="friends-label" for="code">Join a room</label>
+            <div class="join-line">
+              <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
+              <button id="join" class="btn secondary" type="button">Join room</button>
+            </div>
+            <p class="opt-hint">Have a four-letter code? Enter it here.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Wallet and transactions -->
       <section id="wallet" class="wallet" data-pane="wallet" hidden>
         <h2>Your wallet</h2>
@@ -257,41 +284,10 @@
     </section>
   </main>
 
-  <!-- Create / join a room -->
-  <div id="roomModal" class="result-overlay room-modal" role="dialog" aria-modal="true" aria-labelledby="roomModalTitle" hidden>
-    <div class="join-card result-card room-card">
-      <button id="closeRoomModal" class="btn ghost result-close" type="button">Close</button>
-      <h2 id="roomModalTitle" class="step-title">Play with friends</h2>
-      <div class="friends-body">
-        <div class="friends-row">
-          <span class="friends-label">Create a room</span>
-          <fieldset class="opt-group size-group">
-            <legend class="sr-only">Players in the room</legend>
-            <div class="pills cols-3">
-              <label><input type="radio" name="size" value="5" checked><span>5</span></label>
-              <label><input type="radio" name="size" value="10"><span>10</span></label>
-              <label><input type="radio" name="size" value="15"><span>15</span></label>
-            </div>
-          </fieldset>
-          <button id="create" class="btn secondary" type="button">Create room</button>
-          <p class="opt-hint">Players in the room. You get a code to share.</p>
-        </div>
-        <div class="friends-row">
-          <label class="friends-label" for="code">Join a room</label>
-          <div class="join-line">
-            <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
-            <button id="join" class="btn secondary" type="button">Join room</button>
-          </div>
-          <p class="opt-hint">Have a four-letter code? Enter it here.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div id="toast" role="status" aria-live="polite"></div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="account.js?v=1"></script>
-  <script src="app.js?v=38"></script>
+  <script src="app.js?v=39"></script>
 </body>
 </html>
