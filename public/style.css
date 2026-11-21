@@ -437,7 +437,7 @@ input[type="text"]:focus { outline: none; background: #fff; box-shadow: 4px 4px 
 .statcard { background: var(--white); color: var(--ink); border: var(--line); border-radius: var(--radius); box-shadow: 8px 8px 0 var(--ink); padding: 1.25rem 1.5rem 1.5rem; margin-top: 2rem; animation: rise 0.4s ease-out 0.12s backwards; }
 .statcard h2 { margin: 0; font-size: 1.8rem; font-weight: 800; font-stretch: 75%; }
 .statcard h3 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--muted); }
-.stats-grid { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; }
 .trend { width: 100%; height: auto; max-width: 420px; display: block; }
 .trend .line { fill: none; stroke: var(--cobalt); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
 .trend .dot { fill: var(--cobalt); }
@@ -660,9 +660,8 @@ body.has-nav main { padding-top: 1.5rem; }
   #home[data-tab="play"] { grid-template-columns: 1fr 1fr; }
   #home[data-tab="stats"], #home[data-tab="wallet"], #home[data-tab="board"] { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 2rem; align-items: start; }
   #home:not([data-tab="play"])::before { grid-column: 1 / -1; }
-  #home[data-tab="stats"] #myStats { grid-column: 1; grid-row: 2; }
-  #home[data-tab="stats"] #raceHistory { grid-column: 2; grid-row: 2; }
-  #home[data-tab="stats"]:has(#myStats[hidden]) #raceHistory { grid-column: 1 / -1; }
+  #home[data-tab="stats"] #myStats { grid-column: 1 / -1; grid-row: 2; }
+  #home[data-tab="stats"] #raceHistory { grid-column: 1 / -1; grid-row: 3; }
   #home[data-tab="wallet"] #wallet, #home[data-tab="board"] #board,
   #home[data-tab="stats"] .empty-tab,
   #home[data-tab="board"] .empty-tab { grid-column: 1 / -1; grid-row: 2; }
@@ -1202,10 +1201,3 @@ body { padding-top: var(--nav-space, 0px); }
 }
 .result-card h2 { font-size: 1.1rem; margin: 0 0 0.3rem; padding-right: 4.5rem; }
 .result-card p { margin: 0.25rem 0; }
-
-/* ---------- Stats + Race history: stacked instead of side by side ---------- */
-#home #statsSummary { grid-template-columns: 1fr; }
-#home #myStats .stats-grid { grid-template-columns: 1fr; }
-#home #raceList li { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; padding: 0.75rem 0.2rem; }
-#home #raceList li > * { white-space: normal; text-align: left; justify-self: auto; font-size: inherit; }
-#home #raceList li > .muted:last-child { font-size: 0.85rem; }

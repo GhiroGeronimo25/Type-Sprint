@@ -174,7 +174,7 @@ function renderLedger() {
   for (let i = 0; i < history_.items.length; i++) {
     const t = history_.items[i];
     html += '<li><span class="tx ' + (t.amount < 0 ? 'out' : 'in') + '">' + signed(t.amount) + '</span>' +
-      '<span class="what">' + ledgerLabels[t.type] + (t.room ? ' <small>' + esc(t.room) + '</small>' : '') + '</span>' +
+      '<span class="what">' + ledgerLabels[t.type] + '</span>' +
       '<span class="bal">' + t.balance + ' left</span>' +
       '<span class="when">' + new Date(t.at).toLocaleString(undefined, ledgerTime) + '</span></li>';
   }

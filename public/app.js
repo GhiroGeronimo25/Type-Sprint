@@ -704,7 +704,7 @@ function renderPanel(room, me, rank) {
     const busy = room.status === 'countdown' || room.status === 'racing';
     const names = room.players.filter(function (p) { return !p.lobby; }).map(function (p) { return esc(p.name); }).join(', ');
     html = '<h2>You are in the lobby</h2>' +
-      '<p class="share-line">Room code <strong>' + room.code + '</strong></p>' +
+      (room.custom ? '<p class="share-line">Room code <strong>' + room.code + '</strong></p>' : '') +
       (busy
         ? '<p class="practice-ind"><span class="dot"></span>' + (names || 'The host') + ' is practicing. You can join the next race when it is over.</p>'
         : '<p class="practice-ind idle">' + (names || 'The host') + ' finished practicing. Waiting for the next race.</p>');
@@ -721,7 +721,7 @@ function renderPanel(room, me, rank) {
     html = '<h2>Starting your race...</h2>'; // matched rooms start by themselves: no lobby, no host
   } else if (room.status === 'lobby') {
     html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2>' +
-      '<p class="share-line">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' +
+      (room.custom ? '<p class="share-line">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' : '') +
       (room.maxPlayers ? '<p class="fine">' + room.players.length + ' of ' + room.maxPlayers + ' seats taken.</p>' : '') +
       '<p class="fine">' + (room.custom ? 'Play for fun with friends.' : room.ranked
         ? 'Ranked: ' + room.fee + ' coins per racer, rating changes. Leaving after the start forfeits your fee. Alone = free practice.'
