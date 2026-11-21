@@ -469,8 +469,15 @@ input[type="email"]:focus, input[type="password"]:focus { outline: none; backgro
 .auth-msg.error { color: #c0261b; }
 
 
-/* ---------- login / sign-up: intro on the left, form card on the right (stacked on phones) ---------- */
-#auth { max-width: 62rem; margin: 0 auto; padding-top: clamp(0.5rem, 5vh, 3rem); }
+/* ---------- login / sign-up ----------
+   Whole screen is centered. Log in and Sign up are two forms side by side in a clipped track:
+   only one is visible, switching slides between them. The card keeps one fixed height so nothing jumps. */
+main:has(#auth:not([hidden])) {
+  min-height: 100vh; min-height: 100dvh;
+  display: grid; place-items: center;
+  padding-top: 3rem; padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+#auth { width: 100%; max-width: 62rem; margin: 0 auto; padding: 0; }
 .auth-grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: clamp(1.5rem, 5vw, 3.5rem); align-items: center; }
 #auth h1 { font-size: clamp(3.2rem, 9vw, 6rem); margin: 0; }
 #auth .lede { max-width: 26rem; margin: 1rem 0 1.6rem; font-size: 1.15rem; }
@@ -480,33 +487,55 @@ input[type="email"]:focus, input[type="password"]:focus { outline: none; backgro
 .auth-perks b { font-weight: 800; font-size: 1.05rem; }
 .auth-perks span { grid-column: 2; color: rgba(255, 255, 255, 0.88); font-weight: 600; }
 
-#auth .join-card { max-width: none; margin: 0; padding: 1.5rem; box-shadow: 6px 6px 0 var(--ink); }
-.auth-tabs { display: flex; gap: 0.5rem; padding: 0.3rem; margin-bottom: 1.3rem; background: #f1f3fb; border: var(--line); border-radius: 14px; }
-.auth-tab { flex: 1; font: inherit; font-weight: 800; padding: 0.6rem; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
+#auth .join-card { max-width: none; margin: 0; padding: 1.5rem; box-shadow: 6px 6px 0 var(--ink); overflow: hidden; }
+
+/* tabs with a sliding thumb */
+.auth-tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 0.3rem; margin-bottom: 1.2rem; background: #f1f3fb; border: var(--line); border-radius: 14px; }
+.auth-thumb { position: absolute; top: 0.3rem; bottom: 0.3rem; left: 0.3rem; width: calc((100% - 0.6rem) / 2); background: var(--signal); border-radius: 10px; box-shadow: 0 0 0 2px var(--ink), 3px 3px 0 var(--ink); transition: transform 0.4s cubic-bezier(0.7, 0, 0.2, 1); }
+.auth-tabs[data-mode="signup"] .auth-thumb { transform: translateX(100%); }
+.auth-tab { position: relative; z-index: 1; font: inherit; font-weight: 800; padding: 0.6rem; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; transition: color 0.2s; }
 .auth-tab:hover { color: var(--ink); }
-.auth-tab[aria-selected="true"] { background: var(--signal); color: var(--ink); box-shadow: 0 0 0 2px var(--ink), 3px 3px 0 var(--ink); }
+.auth-tab[aria-selected="true"] { color: var(--ink); }
 .auth-tab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--cobalt); }
-#auth .auth-title { margin: 0 0 1.1rem; font-size: 1.6rem; font-weight: 800; }
+
+/* the clipped viewport + sliding track */
+.auth-viewport { overflow: hidden; margin: 0 -0.6rem; transition: height 0.45s cubic-bezier(0.7, 0, 0.2, 1); }
+.auth-track { display: grid; grid-template-columns: 100% 100%; align-items: start; transition: transform 0.45s cubic-bezier(0.7, 0, 0.2, 1); }
+.auth-track[data-mode="signup"] { transform: translateX(-100%); }
+.auth-pane { display: flex; flex-direction: column; padding: 0.3rem 0.6rem 0.9rem; min-width: 0; transition: opacity 0.3s; }
+.auth-track[data-mode="login"] #signupForm, .auth-track[data-mode="signup"] #loginForm { opacity: 0; pointer-events: none; }
+
+#auth .auth-title { margin: 0; font-size: 1.6rem; font-weight: 800; line-height: 1.2; }
+.auth-sub { margin: 0.2rem 0 1.1rem; font-weight: 600; color: var(--muted); }
 #auth .field { margin-bottom: 1rem; }
+#auth .field label { margin-bottom: 0.35rem; }
 #auth input { width: 100%; margin: 0; font: inherit; font-weight: 600; padding: 0.75rem 1rem; border: var(--line); border-radius: 12px; background: #f1f3fb; color: var(--ink); }
 #auth input:focus { outline: none; background: #fff; box-shadow: 4px 4px 0 var(--signal); }
-#auth #auth .field label { margin-bottom: 0.35rem; }
 .field-hint { margin: 0.35rem 0 0; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
 .pw-wrap { position: relative; }
 .pw-wrap input { padding-right: 5rem; }
 .pw-toggle { position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); font: inherit; font-size: 0.85rem; font-weight: 800; color: var(--cobalt-deep); background: none; border: 0; padding: 0.4rem 0.6rem; border-radius: 8px; cursor: pointer; }
 .pw-toggle:hover { background: #e3e8fb; }
 .pw-toggle:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--cobalt); }
+
+.auth-foot { padding-top: 0.4rem; }
 #auth .auth-msg { margin: 0 0 1rem; padding: 0.65rem 0.85rem; font-size: 0.95rem; border: 2px solid var(--mint); border-radius: 10px; background: #e6fbf3; color: #14774f; }
 #auth .auth-msg.error { border-color: var(--coral); background: #ffe9ec; color: #a3122a; }
-#auth .actions { margin-top: 0.4rem; }
 #auth .actions .btn { width: 100%; padding: 0.95rem 1.2rem; font-size: 1.1rem; }
+.auth-switch { margin: 1rem 0 0; text-align: center; font-weight: 600; color: var(--muted); }
+.link-btn { font: inherit; font-weight: 800; color: var(--cobalt-deep); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.link-btn:hover { color: var(--ink); }
+.link-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--cobalt); border-radius: 4px; }
+
 @media (max-width: 820px) {
   .auth-grid { grid-template-columns: 1fr; max-width: 28rem; margin: 0 auto; }
   .auth-perks { display: none; }
   #auth { text-align: center; }
   #auth .lede { margin: 0.8rem auto 1.4rem; }
   #auth .join-card { text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .auth-track, .auth-thumb, .auth-pane, .auth-viewport { transition: none; }
 }
 
 /* logged-in bar: sits above the home grid, so it never shifts the layout */

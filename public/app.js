@@ -64,62 +64,83 @@ async function onSignOut() {
   if (token) postJson('/api/auth/logout', {}, token).catch(function () {}); // revokes the login on the server
 }
 
-function showAuthMessage(text, isError) {
-  $('authMsg').hidden = !text;
-  $('authMsg').textContent = text || '';
-  $('authMsg').classList.toggle('error', !!isError);
+function showAuthMessage(text, isError, mode) {
+  const el = $((mode || authMode) === 'signup' ? 'signupMsg' : 'loginMsg');
+  el.hidden = !text;
+  el.textContent = text || '';
+  el.classList.toggle('error', !!isError);
 }
 
 let authMode = 'login';
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
 
-function authLabel() { return authMode === 'signup' ? 'Create account' : 'Log in'; }
-
+// Log in and Sign up are two forms sitting side by side in a clipped track; switching slides between them.
 function setAuthMode(mode) {
   authMode = mode;
-  showAuthMessage('');
+  showAuthMessage('', false, 'login');
+  showAuthMessage('', false, 'signup');
   const signup = mode === 'signup';
-  $('authTitle').textContent = signup ? 'Create your account' : 'Welcome back';
-  $('usernameRow').hidden = !signup;
-  $('pwHint').hidden = !signup;
-  $('authSubmit').textContent = authLabel();
+  $('authTrack').dataset.mode = mode;
+  $('authTabs').dataset.mode = mode;
   $('tabLogin').setAttribute('aria-selected', String(!signup));
   $('tabSignup').setAttribute('aria-selected', String(signup));
-  $('authPassword').autocomplete = signup ? 'new-password' : 'current-password';
+  // the off-screen form stays hidden from tabbing and screen readers
+  $('loginForm').inert = signup;
+  $('signupForm').inert = !signup;
+  $('loginForm').setAttribute('aria-hidden', String(signup));
+  $('signupForm').setAttribute('aria-hidden', String(!signup));
+  sizeAuth();
 }
 
-async function onAuthSubmit(event) {
+// The card is as tall as the visible form (animated); the grid keeps the height of the taller one so nothing else moves.
+function sizeAuth() {
+  const vp = document.querySelector('.auth-viewport');
+  const card = document.querySelector('.auth-card');
+  const grid = document.querySelector('.auth-grid');
+  const l = $('loginForm').offsetHeight, s = $('signupForm').offsetHeight;
+  if (!l || !s) return; // screen is hidden right now
+  vp.style.height = (authMode === 'signup' ? s : l) + 'px';
+  const chrome = card.offsetHeight - vp.offsetHeight;
+  grid.style.minHeight = window.matchMedia('(min-width: 821px)').matches ? (chrome + Math.max(l, s)) + 'px' : '';
+}
+
+async function onAuthSubmit(event, mode) {
   event.preventDefault();
-  showAuthMessage('');
-  const email = $('authEmail').value.trim();
-  const password = $('authPassword').value;
-  if (!email || password.length < 8) return showAuthMessage('Enter an email and a password of at least 8 characters.', true);
-  $('authSubmit').disabled = true;
-  $('authSubmit').textContent = 'Please wait...';
+  const signup = mode === 'signup';
+  const msg = function (text, isError) { showAuthMessage(text, isError, mode); };
+  const btn = $(signup ? 'signupSubmit' : 'loginSubmit');
+  const label = signup ? 'Create account' : 'Log in';
+  msg('');
+  const email = $(signup ? 'signupEmail' : 'loginEmail').value.trim();
+  const password = $(signup ? 'signupPassword' : 'loginPassword').value;
+  if (!email || password.length < 8) return msg('Enter an email and a password of at least 8 characters.', true);
+  btn.disabled = true;
+  btn.textContent = 'Please wait...';
   try {
-    if (authMode === 'login') {
+    if (!signup) {
       const res = await postJson('/api/auth/login', { email: email, password: password });
-      if (!res.ok) return showAuthMessage(res.data.error || 'Something went wrong. Please try again.', true);
+      if (!res.ok) return msg(res.data.error || 'Something went wrong. Please try again.', true);
       auth = res.data;
       saveAuth();
       return onAuthChange();
     }
-    const username = $('authUsername').value.trim();
-    if (!USERNAME_RE.test(username)) return showAuthMessage('Username: 3-16 letters, numbers, dots, dashes or underscores.', true);
+    const username = $('signupUsername').value.trim();
+    if (!USERNAME_RE.test(username)) return msg('Username: 3-16 letters, numbers, dots, dashes or underscores.', true);
     const res = await postJson('/api/auth/signup', { email: email, password: password, username: username, redirectTo: window.location.origin });
-    if (!res.ok) return showAuthMessage(res.data.error || 'Something went wrong. Please try again.', true);
+    if (!res.ok) return msg(res.data.error || 'Something went wrong. Please try again.', true);
     if (res.data.session) {
       auth = res.data;
       saveAuth();
       return onAuthChange();
     }
+    $('loginEmail').value = email;
     setAuthMode('login'); // with email confirmation switched on there is no session yet
-    showAuthMessage('Account created. Check your email to confirm it, then log in.', false);
+    showAuthMessage('Account created. Check your email to confirm it, then log in.', false, 'login');
   } catch (e) {
-    showAuthMessage('Could not reach the server. Please try again.', true);
+    msg('Could not reach the server. Please try again.', true);
   } finally {
-    $('authSubmit').disabled = false;
-    $('authSubmit').textContent = authLabel();
+    btn.disabled = false;
+    btn.textContent = label;
   }
 }
 
@@ -129,7 +150,8 @@ function onAuthChange() {
     const changedUser = signedInAs !== auth.user.email;
     signedInAs = auth.user.email;
     $('userEmail').textContent = auth.user.username || String(auth.user.email || '').split('@')[0];
-    $('authPassword').value = '';
+    $('loginPassword').value = '';
+    $('signupPassword').value = '';
     if (changedUser) socket.disconnect(); // a different person logged in: start a fresh connection
     socket.connect();                     // does nothing if already connected
     if (!state.room) showScreen('home');
@@ -147,21 +169,36 @@ function onAuthChange() {
 }
 
 function startAuth() {
-  $('authForm').addEventListener('submit', onAuthSubmit);
-  ['login', 'signup'].forEach(function (mode) {
-    $(mode === 'login' ? 'tabLogin' : 'tabSignup').addEventListener('click', function () {
-      if (authMode === mode) return;
-      setAuthMode(mode);
-      $(mode === 'signup' ? 'authUsername' : 'authEmail').focus();
+  $('loginForm').addEventListener('submit', function (e) { onAuthSubmit(e, 'login'); });
+  $('signupForm').addEventListener('submit', function (e) { onAuthSubmit(e, 'signup'); });
+  function switchTo(mode) {
+    if (authMode === mode) return;
+    setAuthMode(mode);
+    $('authTrack').parentNode.scrollLeft = 0; // the clipped viewport must never scroll on its own
+    $(mode === 'signup' ? 'signupUsername' : 'loginEmail').focus({ preventScroll: true });
+  }
+  $('tabLogin').addEventListener('click', function () { switchTo('login'); });
+  $('tabSignup').addEventListener('click', function () { switchTo('signup'); });
+  document.querySelectorAll('[data-switch]').forEach(function (b) {
+    b.addEventListener('click', function () { switchTo(b.dataset.switch); });
+  });
+  document.querySelectorAll('.pw-toggle').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const input = $(btn.dataset.target);
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? 'Hide' : 'Show';
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.setAttribute('aria-pressed', String(show));
     });
   });
-  $('togglePw').addEventListener('click', function () {
-    const show = $('authPassword').type === 'password';
-    $('authPassword').type = show ? 'text' : 'password';
-    $('togglePw').textContent = show ? 'Hide' : 'Show';
-    $('togglePw').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-    $('togglePw').setAttribute('aria-pressed', String(show));
-  });
+  setAuthMode('login');
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(sizeAuth);
+    ro.observe($('loginForm'));
+    ro.observe($('signupForm'));
+  }
+  window.addEventListener('resize', sizeAuth);
   $('signOut').addEventListener('click', onSignOut);
   try { auth = JSON.parse(localStorage.getItem(AUTH_KEY)); } catch (e) { auth = null; }
   if (!auth || !auth.session || !auth.user) auth = null;
