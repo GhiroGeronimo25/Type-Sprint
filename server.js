@@ -24,6 +24,7 @@ const MATCH_JOIN_MS = Number(process.env.MATCH_JOIN_MS) || 15000;   // how long 
 const app = express();
 const server = http.createServer(app);
 const io = new socketio.Server(server);
+app.set('trust proxy', 1); // behind Render's proxy: req.ip is the real visitor, so the login rate limit is per person, not shared by everyone
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '4kb' })); // request bodies for the REST room and matchmaking endpoints
 
