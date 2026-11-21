@@ -769,7 +769,6 @@ function renderPanel(room, me, rank) {
   const finished = room.status === 'finished';
   if (!finished) state.resultDismissed = false;
   if (finished) {
-    html += '<button id="leaveResult" class="btn ghost result-leave" type="button">Leave room</button>';
     // the Close button shares a row with the title, so it never sits on top of the text
     html = html.replace(/^(<h2>[\s\S]*?<\/h2>)/, '<div class="result-head">$1' +
       '<button id="closeResult" class="btn ghost result-close" type="button">Close</button></div>');
@@ -782,7 +781,6 @@ function renderPanel(room, me, rank) {
       state.resultDismissed = false;
       renderPanel(room, me, rank);
     });
-    if ($('leaveResult')) $('leaveResult').addEventListener('click', leaveRoom);
     if ($('closeResult')) $('closeResult').addEventListener('click', function () {
       state.resultDismissed = true;
       renderPanel(room, me, rank);

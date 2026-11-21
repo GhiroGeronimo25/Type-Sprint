@@ -1208,11 +1208,11 @@ body { padding-top: var(--nav-space, 0px); }
   background: rgba(10, 15, 42, 0.6); backdrop-filter: blur(2px); pointer-events: auto; /* dimmed background */
 }
 .result-card {
-  pointer-events: auto; width: min(24rem, 100%); max-height: 80vh; padding: 1.1rem 1.3rem 1.2rem;
-  font-size: 0.95rem; box-shadow: 6px 6px 0 var(--ink);
+  pointer-events: auto; width: min(32rem, 100%); max-height: 85vh; padding: 1.5rem 1.75rem 1.7rem;
+  font-size: 1.05rem; box-shadow: 8px 8px 0 var(--ink);
 }
 .result-card .result-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; }
-.result-card .result-head h2 { margin: 0; padding: 0; font-size: 1.4rem; }
+.result-card .result-head h2 { margin: 0; padding: 0; font-size: 1.8rem; }
 .result-card .result-close { position: static; flex: none; }
 .result-card p { margin: 0.4rem 0; line-height: 1.4; }
 .result-card .payout { margin: 0.8rem 0; }
