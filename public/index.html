@@ -41,7 +41,6 @@
           <form id="loginForm" class="auth-pane" aria-labelledby="loginTitle" novalidate>
             <h2 id="loginTitle" class="auth-title">Welcome back</h2>
             <p class="auth-sub">Pick up where you left off.</p>
-            <div id="loginMsg" class="auth-msg" hidden></div>
             <div class="field">
               <label for="loginEmail">Email</label>
               <input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
@@ -63,7 +62,6 @@
           <form id="signupForm" class="auth-pane" aria-labelledby="signupTitle" novalidate>
             <h2 id="signupTitle" class="auth-title">Create your account</h2>
             <p class="auth-sub">Pick a name and hit the track.</p>
-            <div id="signupMsg" class="auth-msg" hidden></div>
             <div class="field">
               <label for="signupUsername">Username</label>
               <input id="signupUsername" type="text" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="e.g. speedy_fingers">
@@ -109,6 +107,12 @@
           </ul>
         </div>
 
+      </div>
+
+      <!-- Warnings / status messages sit below the card, centered -->
+      <div class="auth-msgs">
+        <div id="loginMsg" class="auth-msg" hidden></div>
+        <div id="signupMsg" class="auth-msg" hidden></div>
       </div>
     </section>
 

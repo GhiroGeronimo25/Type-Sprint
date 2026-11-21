@@ -1178,3 +1178,11 @@ body { padding-top: var(--nav-space, 0px); }
 .room-panel .join-line #code,
 .room-panel .join-line .btn { box-sizing: border-box; height: 3.25rem; min-height: 0; padding-top: 0; padding-bottom: 0; display: flex; align-items: center; justify-content: center; line-height: 1; }
 .room-panel .size-group, .room-panel .size-group .pills, .room-panel .size-group .pills label { height: 100%; }
+
+/* login / sign-up warnings: outside the card, centered underneath it */
+#auth .auth-msgs { margin: 1.25rem auto 0; max-width: 28rem; display: flex; flex-direction: column; align-items: center; text-align: center; }
+#auth .auth-msgs .auth-msg { width: 100%; margin: 0; text-align: left; }
+#auth .auth-msgs .auth-msg[hidden] { display: none; }
+/* only show the message that belongs to the form currently in view */
+#auth .auth-card[data-mode="login"] ~ .auth-msgs #signupMsg,
+#auth .auth-card[data-mode="signup"] ~ .auth-msgs #loginMsg { display: none; }
