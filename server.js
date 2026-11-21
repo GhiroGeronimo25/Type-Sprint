@@ -27,20 +27,6 @@ const io = new socketio.Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json({ limit: '4kb' })); // request bodies for the REST room and matchmaking endpoints
 
-const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
-app.get('/api/username-available', function (req, res) {
-  const name = String((req.query || {}).name || '');
-  if (!USERNAME_RE.test(name)) return res.json({ ok: false, error: 'Use 3-16 letters, numbers, dots, dashes or underscores.' });
-  accounts.usernameAvailable(name).then(function (free) {
-    res.json({ ok: free, error: free ? '' : 'That username is taken.' });
-  }).catch(function (e) {
-    console.error('Username check failed:', e.message);
-    res.status(500).json({ ok: false, error: 'Could not check the username. Please try again.' });
-  });
-});
-
-// The browser needs the project URL and the ANON key to show the login form. Both are public by design.
-// (Never expose SUPABASE_SERVICE_KEY here.)
 app.get('/config.json', function (req, res) {
   res.json({ supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '' });
 });
@@ -50,16 +36,14 @@ const DATA_DIR = path.join(__dirname, 'data');
 const RESULTS_FILE = path.join(DATA_DIR, 'results.json');
 const accounts = createAccounts(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, process.env.SUPABASE_ANON_KEY);
 const ENTRY_FEE = accounts.ENTRY_FEE;
+const requireLogin = require('./api-data')(app, accounts, passages).requireLogin; // wallet, races, stats, leaderboard, passages
+require('./api-auth')(app, accounts, requireLogin);                             // sign-up, login, refresh, logout, profile
 
-// Every socket must log in first. The browser sends its Supabase access token in the handshake; we verify it
-// and remember who it belongs to. From here on the player id (pid) is the verified Supabase user id and is
-// NEVER taken from what the client sends, so nobody can play (or spend coins) as someone else.
 io.use(async function (socket, next) {
   try {
     const user = await accounts.verifyToken(((socket.handshake || {}).auth || {}).token);
     if (!user) return next(new Error('unauthorized'));
     socket.data.pid = user.id;
-    // the display name comes from the account (chosen at sign-up), never from what the browser sends
     socket.data.name = user.username || String(user.email || '').split('@')[0];
     next();
   } catch (e) {
@@ -112,7 +96,6 @@ function recordRace(room) {
   saveResults();
 }
 
-// the last 50 saved races, newest first
 app.get('/api/results', function (req, res) {
   accounts.recentResults(50).catch(function (e) {
     console.error('Could not load saved races:', e.message);
@@ -122,127 +105,6 @@ app.get('/api/results', function (req, res) {
     all.sort(function (a, b) { return String(b.endedAt).localeCompare(String(a.endedAt)); });
     res.json(all.slice(0, 50));
   });
-});
-
-// ---------- REST API: wallet and transaction history ----------
-// Send the Supabase access token as:  Authorization: Bearer <token>
-// The player is always the logged-in user; there is no way to ask for somebody else's wallet.
-const apiLastCall = {}; // user id -> time of the last call (a simple rate limit)
-
-function requireLogin(req, res, next) {
-  const match = /^Bearer (.+)$/.exec(String((req.headers || {}).authorization || ''));
-  if (!match) return res.status(401).json({ error: 'Log in first (missing Bearer token).' });
-  accounts.verifyToken(match[1]).then(function (user) {
-    if (!user) return res.status(401).json({ error: 'Your login is invalid or expired.' });
-    const now = Date.now();
-    const key = user.id + ' ' + (req.path || ''); // the limit is per user and per endpoint
-    if (apiLastCall[key] && now - apiLastCall[key] < 200) return res.status(429).json({ error: 'Too many requests.' });
-    apiLastCall[key] = now;
-    req.user = user;
-    req.token = match[1]; // kept so POST /api/auth/logout can revoke it
-    next();
-  }).catch(function (e) {
-    console.error('Login check failed:', e.message);
-    res.status(401).json({ error: 'Your login is invalid or expired.' });
-  });
-}
-setInterval(function () { // forget old entries so the table cannot grow forever
-  const cutoff = Date.now() - 60000;
-  Object.keys(apiLastCall).forEach(function (id) { if (apiLastCall[id] < cutoff) delete apiLastCall[id]; });
-}, 60000).unref();
-
-// GET /api/wallet -> { coins, rating, races, wins, entryFee, ledger: [latest 10] }
-app.get('/api/wallet', requireLogin, function (req, res) {
-  accounts.view(req.user.id).then(function (view) {
-    if (!view) return res.status(404).json({ error: 'No game account yet. Join a room first.' });
-    res.json(view);
-  }).catch(function (e) {
-    console.error('Could not load wallet:', e.message);
-    res.status(500).json({ error: 'Could not load your wallet.' });
-  });
-});
-
-// GET /api/wallet/transactions?offset=0&limit=20&type=reward
-//   type (optional): grant, entry, refund or reward.  limit: 1-50 (default 20).
-//   -> { items: [{ id, at, type, amount, balance, room }], hasMore, offset, limit }
-app.get('/api/wallet/transactions', requireLogin, function (req, res) {
-  const q = req.query || {};
-  const offset = Math.min(Math.max(parseInt(q.offset, 10) || 0, 0), 10000);
-  const limit = Math.min(Math.max(parseInt(q.limit, 10) || 20, 1), 50);
-  const type = ['grant', 'entry', 'refund', 'reward'].indexOf(q.type) >= 0 ? q.type : '';
-  accounts.ledgerPage(req.user.id, offset, limit, type).then(function (page) {
-    res.json({ items: page.items, hasMore: page.hasMore, offset: offset, limit: limit });
-  }).catch(function (e) {
-    console.error('Could not load transactions:', e.message);
-    res.status(500).json({ error: 'Could not load your transactions.' });
-  });
-});
-
-// ---------- REST API: race history ----------
-// GET /api/races?offset=0&limit=20 -> your ranked races, newest first
-//   -> { items: [{ id, room, ranked, endedAt, rank, wpm, accuracy, finished, progress, seconds, payout, net, ratingBefore, ratingAfter }], hasMore, offset, limit }
-app.get('/api/races', requireLogin, function (req, res) {
-  const q = req.query || {};
-  const offset = Math.min(Math.max(parseInt(q.offset, 10) || 0, 0), 10000);
-  const limit = Math.min(Math.max(parseInt(q.limit, 10) || 20, 1), 50);
-  accounts.raceHistory(req.user.id, offset, limit).then(function (page) {
-    res.json({ items: page.items, hasMore: page.hasMore, offset: offset, limit: limit });
-  }).catch(function (e) {
-    console.error('Could not load race history:', e.message);
-    res.status(500).json({ error: 'Could not load your race history.' });
-  });
-});
-
-// GET /api/races/:id -> one race with every racer's standing. Only for races you took part in.
-app.get('/api/races/:id', requireLogin, function (req, res) {
-  const id = String((req.params || {}).id || '');
-  if (!/^[0-9]{1,15}$/.test(id)) return res.status(400).json({ error: 'Bad race id.' });
-  accounts.raceDetail(req.user.id, Number(id)).then(function (race) {
-    if (!race) return res.status(404).json({ error: 'No such race in your history.' });
-    res.json(race);
-  }).catch(function (e) {
-    console.error('Could not load race:', e.message);
-    res.status(500).json({ error: 'Could not load that race.' });
-  });
-});
-
-// ---------- REST API: stats and leaderboard ----------
-// GET /api/stats -> your own stats: { races, flaggedRaces, bestWpm, avgWpm, trend: [...], mostMissed: [{ ch, misses }] }
-app.get('/api/stats', requireLogin, function (req, res) {
-  accounts.playerStats(req.user.id).then(function (stats) {
-    res.json(stats);
-  }).catch(function (e) {
-    console.error('Could not load stats:', e.message);
-    res.status(500).json({ error: 'Could not load your stats.' });
-  });
-});
-
-// GET /api/leaderboard?limit=20 -> ranked players by rating (limit 1-50, default 20). Your own row has isYou: true.
-//   -> { items: [{ name, rating, races, wins, bestWpm, isYou }] }. Never contains a pid.
-app.get('/api/leaderboard', requireLogin, function (req, res) {
-  const limit = Math.min(Math.max(parseInt((req.query || {}).limit, 10) || 20, 1), 50);
-  accounts.leaderboard(limit, req.user.id).then(function (rows) {
-    res.json({ items: rows });
-  }).catch(function (e) {
-    console.error('Could not load leaderboard:', e.message);
-    res.status(500).json({ error: 'Could not load the leaderboard.' });
-  });
-});
-
-// ---------- REST API: passage bank (public, read-only) ----------
-// The bank is described, never handed out: no endpoint returns a passage's full text, so nobody can read
-// the text before a race. The server alone picks the passage for each race.
-// GET /api/passages -> { default, difficulties: [{ difficulty, description, count, avgWords, avgCharacters, minCharacters, maxCharacters }] }
-app.get('/api/passages', function (req, res) {
-  res.json({ default: passages.DEFAULT_DIFFICULTY, difficulties: passages.summary() });
-});
-
-// GET /api/passages/:difficulty -> { difficulty, items: [{ id, words, characters, preview }] }   (easy, medium or hard)
-app.get('/api/passages/:difficulty', function (req, res) {
-  const level = String((req.params || {}).difficulty || '').toLowerCase();
-  const items = passages.describe(level);
-  if (!items) return res.status(404).json({ error: 'Unknown difficulty. Use easy, medium or hard.' });
-  res.json({ difficulty: level, items: items });
 });
 
 const rooms = {}; // rooms['ABCD'] = { code, hostId, status, text, startAt, players: [] }
@@ -256,22 +118,22 @@ function randomCode() {
   return code;
 }
 
+function roomByCode(code) {
+  return rooms[String(code || '').toUpperCase().slice(0, 4)];
+}
+
 function commonPrefix(a, b) {
   let i = 0;
   while (i < a.length && i < b.length && a[i] === b[i]) i++;
   return i;
 }
 
-// How many letters after the first mistake are wrong. Letters that happen to match don't count, so one typo
-// followed by good typing is one mistake, not ten.
 function wrongAfter(input, text, from) {
   let n = 0;
   for (let i = from; i < input.length; i++) if (input[i] !== text[i]) n++;
   return n;
 }
 
-// Phone keyboards swap plain characters for fancy ones (curly quotes, long dashes, odd spaces). Treat them as
-// the plain character the passage uses, so a player typing the right key is never marked wrong.
 function normalizeTyped(text) {
   return String(text)
     .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
@@ -282,43 +144,26 @@ function normalizeTyped(text) {
 }
 
 function nameTaken(room, name) {
-  for (let i = 0; i < room.players.length; i++) {
-    if (room.players[i].name === name) return true;
-  }
-  return false;
+  return room.players.some(function (p) { return p.name === name; });
 }
 
 function findByPid(room, pid) {
   if (!pid) return null;
-  for (let i = 0; i < room.players.length; i++) {
-    if (room.players[i].pid === pid) return room.players[i];
-  }
-  return null;
+  return room.players.find(function (p) { return p.pid === pid; }) || null;
 }
 
 function findById(room, id) {
-  for (let i = 0; i < room.players.length; i++) {
-    if (room.players[i].id === id) return room.players[i];
-  }
-  return null;
+  return room.players.find(function (p) { return p.id === id; }) || null;
 }
 
-// prefer someone who is still connected
 function pickHost(room) {
-  for (let i = 0; i < room.players.length; i++) {
-    if (!room.players[i].away) return room.players[i].id;
-  }
-  return room.players[0].id;
+  return (room.players.find(function (p) { return !p.away; }) || room.players[0]).id;
 }
 
 function allFinished(room) {
-  for (let i = 0; i < room.players.length; i++) {
-    if (room.players[i].entered && !room.players[i].finished) return false;
-  }
-  return true;
+  return room.players.every(function (p) { return !p.entered || p.finished; });
 }
 
-// sort order: finished players (earliest first), then everyone else by progress
 function byRank(a, b) {
   if (!!a.lobby !== !!b.lobby) return a.lobby ? 1 : -1; // players waiting in the lobby are not in the race
   if (a.entered !== b.entered) return a.entered ? -1 : 1;
@@ -353,13 +198,11 @@ function updateStats(room, p) {
   if (p.keys > 0) p.accuracy = Math.round((1 - p.errors / p.keys) * 1000) / 10;
 }
 
-// anti-cheat: note what happened (once per kind per race, with a count) so it can be saved and reviewed
 function flag(p, reason, detail) {
   if (p.flags[reason]) p.flags[reason].count++;
   else p.flags[reason] = { count: 1, detail: detail };
 }
 
-// what gets saved about each racer when the race ends: typing stats, missed letters and any flags
 function statsPayload(room) {
   return room.players.filter(function (p) {
     return p.entered && (p.keys > 0 || Object.keys(p.flags).length > 0); // someone who only tried to paste still gets flagged
@@ -380,11 +223,9 @@ function statsPayload(room) {
 
 function handleInput(room, p, input) {
   if (room.status !== 'racing' || !p.entered || p.finished || Date.now() < room.startAt) return true;
-
   input = normalizeTyped(input || '').slice(0, room.text.length);
   const correct = commonPrefix(input, room.text);
   const seconds = (Date.now() - room.startAt) / 1000;
-
   if (input.length - p.input.length > MAX_JUMP) {       // pasted text (a whole word from a phone keyboard is fine)
     flag(p, 'paste', (input.length - p.input.length) + ' letters in one message');
     return false;
@@ -394,8 +235,6 @@ function handleInput(room, p, input) {
     flag(p, 'burst', correct + ' correct letters after ' + seconds.toFixed(1) + ' seconds');
     return false;
   }
-
-  // only new letters count as keystrokes, backspace is free
   for (let i = p.input.length; i < input.length; i++) {
     p.keys++;
     if (input[i] !== room.text[i]) {
@@ -405,7 +244,6 @@ function handleInput(room, p, input) {
   }
   p.input = input;
   p.correct = correct;
-
   if (correct === room.text.length) {
     p.finished = true;
     p.finishedAt = Date.now();
@@ -419,8 +257,6 @@ function handleInput(room, p, input) {
 }
 
 // ---------- live lobby: the open rooms anybody can join ----------
-// Sockets on the home screen sit in the 'lobby' channel and get the list whenever it changes.
-// The list never holds a pid: only the room code, the host's name and a few settings.
 const LOBBY_MAX_ROOMS = 20;
 let lobbyTimer = null;
 
@@ -443,7 +279,6 @@ function openRooms() {
   return list.slice(0, LOBBY_MAX_ROOMS).map(function (r) { delete r.createdAt; return r; });
 }
 
-// many room updates in a row (typing, joins) become one lobby message
 function scheduleLobby() {
   if (lobbyTimer) return;
   lobbyTimer = setTimeout(function () {
@@ -502,13 +337,8 @@ function sendAccount(p) {
   }).catch(logError('Could not load account ' + p.pid));
 }
 
-// Resolves to an error message if the race can't start.
-// Ranked: entry fees of everyone who can pay are moved into the race pot in one database transaction
-// (all or nothing); racers with too few coins stay in the room and watch.
-// Casual: free for everyone, no pot, no coins or rating change, and no database calls.
 async function startRace(room) {
   let entered;
-  // Racing alone is practice: it is free, so no fee is taken, nothing is paid out and the rating stays put.
   room.practice = room.players.length === 1; // racing alone: free, and anyone who joins waits in the lobby
   room.paid = room.ranked && room.players.length > 1;
   if (!room.paid) {
@@ -523,14 +353,11 @@ async function startRace(room) {
       console.error('Could not collect entry fees for ' + room.code + ':', e.message);
       return 'Could not collect the entry fees. Nobody was charged, please try again.';
     }
-
     room.starting = false;
     if (rooms[room.code] !== room) { // everyone left while the fees were being collected
       if (collected.entered.length > 0) accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
       return '';
     }
-
-    // racers who left in the meantime get their fee back
     const here = room.players.map(function (p) { return p.pid; });
     entered = collected.entered.filter(function (pid) { return here.indexOf(pid) >= 0; });
     collected.entered.forEach(function (pid) {
@@ -541,7 +368,6 @@ async function startRace(room) {
       return 'Nobody has ' + ENTRY_FEE + ' coins for the entry fee.';
     }
   }
-
   room.text = passages.pick(room.difficulty, room.text); // the server chooses: from the room's difficulty, never the same passage twice in a row
   room.status = 'countdown';
   room.startAt = Date.now() + COUNTDOWN_MS;
@@ -557,8 +383,6 @@ async function startRace(room) {
     }
     sendAccount(p);
   }
-
-  // the passage is only revealed when the countdown starts
   io.to(room.code).emit('race:countdown', {
     text: room.text,
     startAt: room.startAt,
@@ -590,18 +414,15 @@ function beginRacing(room) {
   }, RACE_MS);
 }
 
-// pay prizes and update ratings, once per race
 async function settleRace(room) {
   if (!room.paid) return; // casual and practice races pay nothing and change no ratings
   const ranked = room.players.filter(function (p) { return p.entered; });
   if (ranked.length === 0) {
-    // everyone who paid disconnected or left: there is nobody to pay, so the race is cancelled and every fee goes back
     await accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
     return;
   }
   let outcome;
   try {
-    // one transaction: split the pot by placement, update every rating, save the results
     outcome = await accounts.settle(room.code, ranked.map(function (p) {
       return {
         pid: p.pid,
@@ -615,7 +436,6 @@ async function settleRace(room) {
       };
     }), room.text);
   } catch (e) {
-    // the transaction was rolled back: nothing was paid, so return the fees instead of losing them
     console.error('Could not settle race ' + room.code + ':', e.message);
     await accounts.voidPot(room.code).catch(logError('Could not return pot ' + room.code));
     ranked.forEach(function (p) {
@@ -683,7 +503,6 @@ function joinRoom(socket, room, rawName, pid) {
   return player;
 }
 
-// creates the account on first visit and loads the rating; the player's seat is already held
 async function registerPlayer(room, player) {
   const view = await accounts.join(player.pid, player.name);
   player.rating = view.rating;
@@ -691,7 +510,6 @@ async function registerPlayer(room, player) {
   broadcast(room);
 }
 
-// a returning player takes their old seat back on a new connection
 function rebind(socket, room, p) {
   clearTimeout(p.awayTimer);
   p.awayTimer = null;
@@ -735,7 +553,6 @@ function removePlayer(room, p) {
   else broadcast(room);
 }
 
-// leaving on purpose: gone straight away
 function leaveRoom(socket) {
   const room = rooms[socket.data.code];
   if (!room) { socket.data.code = null; return; } // a stale code must not leave the player stuck "in a room"
@@ -745,7 +562,6 @@ function leaveRoom(socket) {
   if (p) removePlayer(room, p);
 }
 
-// connection dropped (closed tab, refresh, bad wifi): hold the seat for a while
 function dropConnection(socket) {
   const room = rooms[socket.data.code];
   if (!room) return;
@@ -755,8 +571,6 @@ function dropConnection(socket) {
   p.awayTimer = setTimeout(function () {
     removePlayer(room, p);
   }, GRACE_MS);
-  // Ranked: once the fee is in the pot, a disconnect forfeits it. The racer is out of this race (they can come
-  // back to watch), and their fee stays in the pot for the racers who stay.
   if (room.paid && p.entered && (room.status === 'countdown' || room.status === 'racing')) {
     p.entered = false;
     p.forfeited = true;
@@ -776,8 +590,6 @@ function cancelSearch(socket) {
   }
 }
 
-// Players who queued through the REST API have no socket yet: their seat in the room is held for them, they
-// learn the room code from GET /api/matchmaking, and they claim the seat with a room:join event.
 const matchResults = {}; // pid -> { code, at }: a REST searcher's finished match, until they connect
 
 function matchFor(pid) {
@@ -794,7 +606,6 @@ function startMatchedRace(room) {
   }).catch(logError('Could not start matched race ' + room.code));
 }
 
-// not everyone showed up in time: race with whoever is here (2+), or let the room become a normal one
 function matchDeadline(room) {
   if (rooms[room.code] !== room || !room.matchPids || room.status !== 'lobby') return;
   room.matchPids = null;
@@ -805,7 +616,6 @@ function matchDeadline(room) {
   broadcast(room);
 }
 
-// a group of players the queue has matched: put them in a fresh room and start the countdown
 function startMatch(group) {
   const first = group.filter(function (t) { return t.socket; })[0];
   const waiting = group.filter(function (t) { return !t.socket; }); // REST searchers: they still have to connect
@@ -832,7 +642,6 @@ function runMatchmaking() {
   matchmaker.take(Date.now()).forEach(startMatch);
 }
 
-// every second: make any matches that are ready, and tell each searcher how it is going
 setInterval(function () {
   runMatchmaking();
   const now = Date.now();
@@ -842,148 +651,21 @@ setInterval(function () {
   });
 }, Number(process.env.MM_TICK_MS) || 1000).unref();
 
-// ---------- REST API: authentication ----------
-// POST /api/auth/signup   { email, password, username }  -> 201 { user: { email, username }, session }   (session is null when the email must be confirmed first)
-// POST /api/auth/login    { email, password }            -> 200 { user, session }
-// POST /api/auth/refresh  { refreshToken }               -> 200 { user, session }   (refresh tokens are single use: keep the new one)
-// POST /api/auth/logout   (logged in)                    -> 200 { ok: true }        (revokes the login everywhere)
-// GET  /api/auth/me       (logged in)                    -> 200 { username, email, rating, coins, races, wins }
-// session = { accessToken, refreshToken, tokenType: 'Bearer', expiresIn, expiresAt }. Send accessToken as "Authorization: Bearer ...".
-// Passwords are only ever sent to Supabase Auth: this server never stores or logs them.
-const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
-const authHits = {}; // 'ip path' -> [timestamps]: the logged-out endpoints can be guessed at, so they get a stricter limit
-const AUTH_LIMIT = Number(process.env.AUTH_LIMIT) || 10;   // tries ...
-const AUTH_WINDOW_MS = Number(process.env.AUTH_WINDOW_MS) || 60000; // ... per minute, per address and endpoint
-
-function authLimit(req, res, next) {
-  const ip = req.ip || (req.socket && req.socket.remoteAddress) || 'unknown';
-  const key = ip + ' ' + (req.path || '');
-  const now = Date.now();
-  const hits = (authHits[key] || []).filter(function (t) { return now - t < AUTH_WINDOW_MS; });
-  if (hits.length >= AUTH_LIMIT) return res.status(429).json({ error: 'Too many attempts. Wait a minute and try again.' });
-  hits.push(now);
-  authHits[key] = hits;
-  next();
-}
-setInterval(function () {
-  const now = Date.now();
-  Object.keys(authHits).forEach(function (k) {
-    authHits[k] = authHits[k].filter(function (t) { return now - t < AUTH_WINDOW_MS; });
-    if (authHits[k].length === 0) delete authHits[k];
-  });
-}, 60000).unref();
-
-const AUTH_ERRORS = { // what accounts.js reports -> [status, what the caller is told]
-  invalid_credentials: [401, 'Wrong email or password.'],
-  email_taken: [409, 'That email already has an account.'],
-  username_taken: [409, 'That username is taken.'],
-  weak_password: [422, 'That password is too weak. Use at least 8 characters.'],
-  unconfirmed: [403, 'Confirm your email first, then log in.'],
-  invalid_refresh: [401, 'Your login has expired. Log in again.'],
-  rate_limited: [429, 'Too many attempts. Wait a minute and try again.'],
-  not_configured: [503, 'Login is not set up on this server.'],
-};
-
-function authFail(res, what, e) {
-  const known = AUTH_ERRORS[e && e.code];
-  if (known) return res.status(known[0]).json({ error: known[1] });
-  console.error(what + ' failed:', e && e.message); // never the password or tokens: they are not in the message
-  res.status(502).json({ error: 'Could not reach the login service. Please try again.' });
-}
-
-function cleanEmail(v) {
-  return typeof v === 'string' && v.length <= 254 && EMAIL_RE.test(v.trim()) ? v.trim() : '';
-}
-
-app.post('/api/auth/signup', authLimit, async function (req, res) {
-  const body = req.body || {};
-  const email = cleanEmail(body.email);
-  if (!email) return res.status(400).json({ error: 'Enter a valid email address.' });
-  if (typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 72) {
-    return res.status(400).json({ error: 'The password must be 8 to 72 characters.' });
-  }
-  if (typeof body.username !== 'string' || !USERNAME_RE.test(body.username)) {
-    return res.status(400).json({ error: 'Username: 3-16 letters, numbers, dots, dashes or underscores.' });
-  }
-  try {
-    if (!(await accounts.usernameAvailable(body.username))) return res.status(409).json({ error: 'That username is taken.' });
-    const out = await accounts.signUp(email, body.password, body.username);
-    res.status(201).json(out.session ? out : { user: out.user, session: null, message: 'Check your email to confirm your account, then log in.' });
-  } catch (e) {
-    authFail(res, 'Sign-up', e);
-  }
-});
-
-app.post('/api/auth/login', authLimit, async function (req, res) {
-  const body = req.body || {};
-  const email = cleanEmail(body.email);
-  // the same answer for a bad email and a bad password: nobody can use this to find out who has an account
-  if (!email || typeof body.password !== 'string' || body.password.length === 0 || body.password.length > 72) {
-    return res.status(401).json({ error: AUTH_ERRORS.invalid_credentials[1] });
-  }
-  try {
-    res.json(await accounts.signIn(email, body.password));
-  } catch (e) {
-    authFail(res, 'Login', e);
-  }
-});
-
-app.post('/api/auth/refresh', authLimit, async function (req, res) {
-  const token = (req.body || {}).refreshToken;
-  if (typeof token !== 'string' || token.length === 0 || token.length > 500) return res.status(400).json({ error: 'Send your refreshToken.' });
-  try {
-    res.json(await accounts.refreshSession(token));
-  } catch (e) {
-    authFail(res, 'Refresh', e);
-  }
-});
-
-app.post('/api/auth/logout', requireLogin, async function (req, res) {
-  try {
-    await accounts.signOut(req.token);
-    res.json({ ok: true });
-  } catch (e) {
-    authFail(res, 'Logout', e);
-  }
-});
-
-app.get('/api/auth/me', requireLogin, async function (req, res) {
-  try {
-    const view = await accounts.view(req.user.id);
-    res.json({
-      username: req.user.username, email: req.user.email,
-      rating: view ? view.rating : 1000, coins: view ? view.coins : 0, races: view ? view.races : 0, wins: view ? view.wins : 0,
-    });
-  } catch (e) {
-    authFail(res, 'Profile', e);
-  }
-});
-
 // ---------- REST API: rooms and matchmaking ----------
-// Same login as the other endpoints (Authorization: Bearer <token>). Nothing here ever returns a player id.
-// A race is typed over a live connection, so the REST calls reserve a place and the socket claims it:
-//   rooms:        POST /api/rooms (a room is held for you for RESERVE_MS), then emit room:join { code } on your socket.
-//   matchmaking:  POST /api/matchmaking to queue, poll GET /api/matchmaking until it says "matched" with a code,
-//                 then emit room:join { code } within MATCH_JOIN_MS. DELETE /api/matchmaking leaves the queue.
 function roomOfPid(pid) {
-  const codes = Object.keys(rooms);
-  for (let i = 0; i < codes.length; i++) {
-    if (findByPid(rooms[codes[i]], pid)) return rooms[codes[i]];
-  }
-  return null;
+  const code = Object.keys(rooms).find(function (c) { return findByPid(rooms[c], pid); });
+  return code ? rooms[code] : null;
 }
 
 function reservedRoomOf(pid) {
-  const codes = Object.keys(rooms);
-  for (let i = 0; i < codes.length; i++) if (rooms[codes[i]].reservedHost === pid) return rooms[codes[i]];
-  return null;
+  const code = Object.keys(rooms).find(function (c) { return rooms[c].reservedHost === pid; });
+  return code ? rooms[code] : null;
 }
 
 function restName(user) {
   return cleanName(user.username || String(user.email || '').split('@')[0]);
 }
 
-// returns an error message, or '' when the body's ranked/difficulty are fine
 function checkRaceSettings(body) {
   if (body.ranked !== undefined && typeof body.ranked !== 'boolean') return '"ranked" must be true or false.';
   if (body.difficulty !== undefined && !passages.isDifficulty(body.difficulty)) return '"difficulty" must be easy, medium or hard.';
@@ -999,21 +681,16 @@ function roomView(room, pid) {
   };
 }
 
-// GET /api/rooms -> { rooms: [{ code, host, ranked, difficulty, players, max, fee }] }  the open rooms, newest first
 app.get('/api/rooms', requireLogin, function (req, res) {
   res.json({ rooms: openRooms() });
 });
 
-// GET /api/rooms/:code -> { code, status, ranked, difficulty, host, players: [{ name, rating, away }], max, fee, pot, youAreIn }
-// (a room still waiting for its host to connect is only visible to its owner; the passage text is never included)
 app.get('/api/rooms/:code', requireLogin, function (req, res) {
-  const room = rooms[String((req.params || {}).code || '').toUpperCase().slice(0, 4)];
+  const room = roomByCode((req.params || {}).code);
   if (!room || (room.players.length === 0 && room.reservedHost !== req.user.id)) return res.status(404).json({ error: 'No room with that code.' });
   res.json(roomView(room, req.user.id));
 });
 
-// POST /api/rooms { ranked?: true, difficulty?: 'easy'|'medium'|'hard' } -> 201 { code, ranked, difficulty, expiresInMs }
-// Reserves a room with you as the host. Connect and emit room:join { code } within expiresInMs to take the seat.
 app.post('/api/rooms', requireLogin, function (req, res) {
   const body = req.body || {};
   const bad = checkRaceSettings(body);
@@ -1033,18 +710,14 @@ app.post('/api/rooms', requireLogin, function (req, res) {
   res.status(201).json({ code: room.code, ranked: room.ranked, difficulty: room.difficulty, expiresInMs: RESERVE_MS });
 });
 
-// DELETE /api/rooms/:code -> { ok: true }   cancels your own reservation, before you have connected
 app.delete('/api/rooms/:code', requireLogin, function (req, res) {
-  const room = rooms[String((req.params || {}).code || '').toUpperCase().slice(0, 4)];
+  const room = roomByCode((req.params || {}).code);
   if (!room || room.reservedHost !== req.user.id) return res.status(404).json({ error: 'You have no reserved room with that code.' });
   clearTimeout(room.reserveTimer);
   delete rooms[room.code];
   res.json({ ok: true });
 });
 
-// GET /api/matchmaking -> { status: 'idle' }
-//                      or { status: 'searching', ranked, difficulty, waitedMs, searching }
-//                      or { status: 'matched', code, expiresInMs }  (emit room:join { code } to take your seat)
 app.get('/api/matchmaking', requireLogin, function (req, res) {
   const pid = req.user.id;
   const m = matchFor(pid);
@@ -1054,7 +727,6 @@ app.get('/api/matchmaking', requireLogin, function (req, res) {
   res.json({ status: 'searching', ranked: t.ranked, difficulty: t.difficulty, waitedMs: Date.now() - t.joinedAt, searching: matchmaker.poolSize(t) });
 });
 
-// POST /api/matchmaking { ranked?: true, difficulty?: ... } -> 202 { status: 'searching', ranked, difficulty }
 app.post('/api/matchmaking', requireLogin, async function (req, res) {
   try {
     const body = req.body || {};
@@ -1090,7 +762,6 @@ app.post('/api/matchmaking', requireLogin, async function (req, res) {
   }
 });
 
-// DELETE /api/matchmaking -> { status: 'idle' }   leaves the queue (also drops a match you have not joined yet)
 app.delete('/api/matchmaking', requireLogin, function (req, res) {
   const pid = req.user.id;
   const t = matchmaker.all().filter(function (x) { return x.pid === pid; })[0];
@@ -1101,7 +772,6 @@ app.delete('/api/matchmaking', requireLogin, function (req, res) {
 
 function onConnection(socket) {
   socket.data.code = null;
-
   async function onCreate(data, ack) {
     if (typeof ack !== 'function') return;
     if (socket.data.code) return ack({ ok: false, error: 'You are already in a room. Leave it first.' });
@@ -1119,14 +789,12 @@ function onConnection(socket) {
     }
     ack({ ok: true, code: room.code });
   }
-
   async function onJoin(data, ack) {
     data = data || {};
     const code = String(data.code || '').toUpperCase().slice(0, 4);
-    const room = rooms[code];
+    const room = roomByCode(code);
     const pid = socket.data.pid;
     const existing = room && findByPid(room, pid);
-    // a practice run (one player) does not close the room: newcomers wait in the lobby until it is over
     const started = room && (room.starting || ((room.status === 'countdown' || room.status === 'racing') && !room.practice));
     let error = '';
     if (socket.data.code) error = 'You are already in a room.';
@@ -1140,9 +808,7 @@ function onConnection(socket) {
     else if (room.reservedHost && room.reservedHost !== pid && room.players.length === 0) error = 'The host has not arrived yet.';
     else if (room.matchPids && room.matchPids.indexOf(pid) < 0) error = 'That room is reserved for a matched race.';
     else if (room.players.length >= MAX_PLAYERS) error = 'That room is full (' + MAX_PLAYERS + ' players max).';
-
     if (error) return ack({ ok: false, error: error });
-    // a room made through POST /api/rooms: its owner takes the host seat; a matched room: first one in hosts
     if (room.reservedHost === pid) {
       room.reservedHost = null;
       clearTimeout(room.reserveTimer);
@@ -1158,22 +824,19 @@ function onConnection(socket) {
       return ack({ ok: false, error: 'Could not reach the account service. Please try again.' });
     }
     ack({ ok: true, code: code });
-    // matched room: everybody has connected, so start now instead of waiting for the deadline
     if (room.matchPids && room.status === 'lobby' && !room.starting && room.players.length >= room.matchPids.length) {
       clearTimeout(room.matchTimer);
       room.matchPids = null;
       startMatchedRace(room);
     }
   }
-
   function onRejoin(data, ack) {
     if (typeof ack !== 'function') return;
     data = data || {};
-    const room = rooms[String(data.code || '').toUpperCase().slice(0, 4)];
+    const room = roomByCode(data.code);
     const p = room && findByPid(room, socket.data.pid);
     if (!p) return ack({ ok: false, error: 'That room no longer exists.' });
     if (socket.data.code && socket.data.code !== room.code) return ack({ ok: false, error: 'You are already in a room.' });
-
     rebind(socket, room, p);
     ack({
       ok: true,
@@ -1188,7 +851,6 @@ function onConnection(socket) {
     });
     broadcast(room);
   }
-
   async function onStart() {
     const room = rooms[socket.data.code];
     if (!room || room.hostId !== socket.id) return; // only the host starts races
@@ -1198,9 +860,6 @@ function onConnection(socket) {
     const error = await startRace(room);
     if (error) socket.emit('race:notice', { message: error });
   }
-
-  // Back to the room's waiting lobby. Only the host, and only when nobody can lose a fee:
-  // once the race is over, or while racing alone (practice).
   function onToLobby() {
     const room = rooms[socket.data.code];
     if (!room || room.hostId !== socket.id) return;
@@ -1217,21 +876,12 @@ function onConnection(socket) {
     room.players.forEach(resetPlayer);
     broadcast(room);
   }
-
   function onInput(data) {
     const room = rooms[socket.data.code];
     if (!room) return;
-    for (let i = 0; i < room.players.length; i++) {
-      const p = room.players[i];
-      if (p.id !== socket.id) continue;
-      if (!handleInput(room, p, (data || {}).input)) socket.emit('race:resync', { input: p.input, seq: (data || {}).seq });
-    }
+    const p = findById(room, socket.id);
+    if (p && !handleInput(room, p, (data || {}).input)) socket.emit('race:resync', { input: p.input, seq: (data || {}).seq });
   }
-
-  function onLeave() {
-    leaveRoom(socket);
-  }
-
   function onAccount(data, ack) {
     if (typeof ack !== 'function') return;
     accounts.view(socket.data.pid).then(function (view) {
@@ -1241,8 +891,6 @@ function onConnection(socket) {
       ack({ ok: false });
     });
   }
-
-  // quick match: queue for a race with players of a similar rating (same type and difficulty)
   socket.on('match:join', function (data, ack) { onMatchJoin(data, ack).catch(logError('match:join')); });
   socket.on('match:cancel', function (data, ack) {
     cancelSearch(socket);
@@ -1255,13 +903,11 @@ function onConnection(socket) {
     const now = Date.now();
     if (socket.data.lastMatch && now - socket.data.lastMatch < 500) return ack({ ok: false, error: 'Slow down a little.' });
     socket.data.lastMatch = now;
-
     const pid = socket.data.pid;
     if (socket.data.searching || matchmaker.has(pid)) return ack({ ok: false, error: 'You are already searching for a match.' });
     const ranked = data.ranked !== false; // ranked unless the player picked casual
     const difficulty = passages.isDifficulty(data.difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY;
     const name = cleanName(socket.data.name);
-
     let account;
     try {
       account = await accounts.join(pid, name);
@@ -1272,7 +918,6 @@ function onConnection(socket) {
     if (ranked && account.coins < ENTRY_FEE) {
       return ack({ ok: false, error: 'You need ' + ENTRY_FEE + ' coins for a ranked match. Try a casual match.' });
     }
-    // things can change while the database answers
     if (socket.data.gone || socket.data.code || socket.data.searching || matchmaker.has(pid)) {
       return ack({ ok: false, error: 'Could not start searching. Please try again.' });
     }
@@ -1282,14 +927,12 @@ function onConnection(socket) {
     runMatchmaking(); // someone may already be waiting
   }
   socket.on('account:get', onAccount);
-  // the home screen asks to watch the open rooms; it gets the list now and again on every change
   socket.on('lobby:watch', function (data, ack) {
     if (socket.data.code) return typeof ack === 'function' && ack({ ok: false, rooms: [] });
     socket.join('lobby');
     if (typeof ack === 'function') ack({ ok: true, rooms: openRooms() });
   });
   socket.on('lobby:unwatch', function () { socket.leave('lobby'); });
-  // the host picks how hard the next passage will be (only between races, and only a real difficulty)
   socket.on('room:difficulty', function (data) {
     const room = rooms[socket.data.code];
     if (!room || room.hostId !== socket.id) return;
@@ -1306,7 +949,7 @@ function onConnection(socket) {
   socket.on('room:lobby', onToLobby);
   socket.on('race:input', onInput);
   socket.on('room:rejoin', onRejoin);
-  socket.on('room:leave', onLeave);
+  socket.on('room:leave', function () { leaveRoom(socket); });
   socket.on('disconnect', function () {
     socket.data.gone = true;
     cancelSearch(socket);
@@ -1316,7 +959,6 @@ function onConnection(socket) {
 
 io.on('connection', onConnection);
 
-// races that were running when the server stopped never finish: give those entry fees back, then open up
 accounts.voidAllPots().then(function (count) {
   if (count > 0) console.log('Returned ' + count + ' unfinished race pot(s).');
 }).catch(function (e) {

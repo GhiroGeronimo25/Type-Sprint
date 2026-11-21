@@ -1,5 +1,3 @@
-// The socket stays disconnected until the player is logged in. Every (re)connect sends a fresh access token,
-// and the server uses it to decide who this is.
 const socket = io({
   autoConnect: false,
   auth: function (cb) {
@@ -12,8 +10,6 @@ function $(id) {
 }
 
 // ---------- login (Supabase Auth) ----------
-// pid is only used on this screen (for example to mark "you"). The server never trusts it: it uses the id
-// from the verified login token instead.
 let pid = null;
 let supa = null;
 
@@ -23,14 +19,14 @@ async function getAccessToken() {
   return res.data.session ? res.data.session.access_token : '';
 }
 
+async function apiGet(url) {
+  return fetch(url, { headers: { Authorization: 'Bearer ' + await getAccessToken() } });
+}
+
 function showAuthMessage(text, isError) {
   $('authMsg').hidden = !text;
   $('authMsg').textContent = text || '';
   $('authMsg').classList.toggle('error', !!isError);
-}
-
-function setAuthBusy(busy) {
-  $('authSubmit').disabled = busy;
 }
 
 function friendlyAuthError(error) {
@@ -62,7 +58,7 @@ async function onAuthSubmit(event) {
   const email = $('authEmail').value.trim();
   const password = $('authPassword').value;
   if (!email || password.length < 6) return showAuthMessage('Enter an email and a password of at least 6 characters.', true);
-  setAuthBusy(true);
+  $('authSubmit').disabled = true;
   try {
     if (authMode === 'login') {
       const res = await supa.auth.signInWithPassword({ email: email, password: password });
@@ -75,15 +71,12 @@ async function onAuthSubmit(event) {
     if (!check.ok) return showAuthMessage(check.error || 'That username is not available.', true);
     const res = await supa.auth.signUp({ email: email, password: password, options: { data: { username: username }, emailRedirectTo: window.location.origin } });
     if (res.error) return showAuthMessage(friendlyAuthError(res.error), true);
-    // When an email is already registered, Supabase answers with a fake "new" user that has no identities (so it
-    // can't be used to find out who has an account). That is not a new account: say so instead of "check your email".
     const created = res.data && res.data.user;
     if (created && Array.isArray(created.identities) && created.identities.length === 0) {
       setAuthMode('login');
       $('authEmail').value = email;
       return showAuthMessage('That email already has an account. Log in instead.', true);
     }
-    // with email confirmation switched on there is no session yet
     if (!res.data.session) {
       setAuthMode('login');
       showAuthMessage('Account created. Check your email to confirm it, then log in.', false);
@@ -91,15 +84,10 @@ async function onAuthSubmit(event) {
   } catch (e) {
     showAuthMessage('Could not reach the server. Please try again.', true);
   } finally {
-    setAuthBusy(false);
+    $('authSubmit').disabled = false;
   }
 }
 
-async function onSignOut() {
-  await supa.auth.signOut(); // onAuthChange does the rest
-}
-
-// called whenever the login state changes (page load, log in, log out, token refresh)
 function onAuthChange(session) {
   if (session && session.user) {
     const changedUser = pid !== session.user.id;
@@ -137,7 +125,7 @@ async function startAuth() {
   supa = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
   $('authForm').addEventListener('submit', onAuthSubmit);
   $('authSwitch').addEventListener('click', function () { setAuthMode(authMode === 'login' ? 'signup' : 'login'); });
-  $('signOut').addEventListener('click', onSignOut);
+  $('signOut').addEventListener('click', function () { supa.auth.signOut(); }); // onAuthChange does the rest
   supa.auth.onAuthStateChange(function (event, session) {
     if (event === 'TOKEN_REFRESHED') return; // same user: nothing to redo
     onAuthChange(session);
@@ -146,7 +134,6 @@ async function startAuth() {
   onAuthChange(first.data.session);
 }
 
-// what the screen remembers between server updates
 const state = { account: null, result: null, room: null, text: '', startAt: 0, limitMs: 60000, offset: 0, chars: [], restore: '', resultDismissed: false };
 
 // ---------- helpers ----------
@@ -173,20 +160,13 @@ function commonPrefix(a, b) {
 }
 
 function myIndex(room) {
-  for (let i = 0; i < room.players.length; i++) {
-    if (room.players[i].id === socket.id) return i;
-  }
-  return -1;
+  return room.players.findIndex(function (p) { return p.id === socket.id; });
 }
 
 function showToast(message) {
   $('toast').textContent = message;
   $('toast').classList.add('show');
-  setTimeout(hideToast, 3000);
-}
-
-function hideToast() {
-  $('toast').classList.remove('show');
+  setTimeout(function () { $('toast').classList.remove('show'); }, 3000);
 }
 
 const TABS = ['play', 'stats', 'wallet', 'board'];
@@ -213,7 +193,6 @@ function setTab(tab, pushHash) {
 }
 
 function updateEmptyStates() {
-  // friendly messages when a tab would otherwise be blank
   $('statsEmpty').hidden = currentTab !== 'stats' || !$('raceHistory').hidden || !$('myStats').hidden;
   $('boardEmpty').hidden = currentTab !== 'board' || !$('board').hidden;
 }
@@ -294,7 +273,6 @@ function onEntered(result) {
   showScreen('room');
 }
 
-// every home-screen button goes through this: it says so when the connection is down or the server stays silent
 function emitWithFeedback(event, payload, handler, onFail) {
   if (!socket.connected) {
     if (onFail) onFail();
@@ -324,12 +302,14 @@ function showSearching(on) {
   if (on) $('searchText').textContent = 'Searching for opponents...';
 }
 
-function quickMatch() {
+function raceSettings() {
   const mode = document.querySelector('input[name="mode"]:checked');
   const level = document.querySelector('input[name="difficulty"]:checked');
-  emitWithFeedback('match:join', {
-    ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium',
-  }, function (res) {
+  return { ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium' };
+}
+
+function quickMatch() {
+  emitWithFeedback('match:join', raceSettings(), function (res) {
     if (!res || !res.ok) return showToast(res && res.error ? res.error : 'Could not start searching.');
     showSearching(true);
   });
@@ -346,15 +326,8 @@ function onMatchStatus(data) {
     (data.searching === 1 ? ' player' : ' players') + ' searching';
 }
 
-// the server found a match and has already put us in the room
-function onMatchFound(data) {
-  onEntered({ ok: true, code: data.code });
-}
-
 function createRoom() {
-  const mode = document.querySelector('input[name="mode"]:checked');
-  const level = document.querySelector('input[name="difficulty"]:checked');
-  emitWithFeedback('room:create', { ranked: !mode || mode.value === 'ranked', difficulty: level ? level.value : 'medium' }, onEntered);
+  emitWithFeedback('room:create', raceSettings(), onEntered);
 }
 
 function joinRoom() {
@@ -381,7 +354,6 @@ function copyLink() {
   });
 }
 
-// Join stays disabled until a full four-letter code is typed
 function syncJoin() {
   $('code').value = $('code').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   $('join').disabled = $('code').value.length < 4;
@@ -397,280 +369,9 @@ $('code').addEventListener('keydown', onHomeKey);
 $('leave').addEventListener('click', leaveRoom);
 $('copyLink').addEventListener('click', copyLink);
 
-// The old browser-only "saved races" list is gone: race history lives on the account. Tidy up what it left behind.
 try { localStorage.removeItem('records'); } catch (e) { /* storage can be blocked */ }
 
-// ---------- stats and leaderboard (kept on the server) ----------
-// ---------- race history (REST API: GET /api/races) ----------
-const races_ = { items: [], hasMore: false, loading: false };
-
-// Casual and practice races change no coins or rating, so the server does not keep them. This browser does, and
-// they are merged into the race history below (ranked races come from the account).
-const LOCAL_RACES_KEY = 'casualRaces';
-
-function loadLocalRaces() {
-  try {
-    const list = JSON.parse(localStorage.getItem(LOCAL_RACES_KEY));
-    return Array.isArray(list) ? list : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-function saveLocalRace(room, me, rank) {
-  if (room.status !== 'finished' || !me.entered) return;
-  if (room.ranked && !room.practice) return; // real ranked races are saved on the account
-  if (!me.finished && me.wpm === 0) return;
-  const id = room.code + ':' + room.startAt;
-  const list = loadLocalRaces();
-  if (list.some(function (r) { return r.id === id; })) return;
-  list.unshift({
-    id: id, endedAt: new Date().toISOString(), room: room.code, rank: rank,
-    wpm: me.wpm, accuracy: me.accuracy, finished: me.finished, progress: me.progress,
-    seconds: me.finished ? Math.round(me.finishMs / 100) / 10 : null,
-    kind: room.practice ? 'Practice' : 'Casual',
-  });
-  try { localStorage.setItem(LOCAL_RACES_KEY, JSON.stringify(list.slice(0, 30))); } catch (e) { /* storage can be blocked */ }
-  renderRaceHistory();
-}
-
-// the account's ranked races plus this browser's casual and practice races, newest first
-function mergedRaces() {
-  const server = races_.items;
-  const oldest = server.length ? Date.parse(server[server.length - 1].endedAt) : Infinity;
-  const local = loadLocalRaces().filter(function (l) {
-    const t = Date.parse(l.endedAt);
-    if (races_.hasMore && t < oldest) return false; // older than the page on screen: shows up after "Show more"
-    return !server.some(function (r) { // a ranked practice run the server already lists
-      return r.room === l.room && Math.abs(Date.parse(r.endedAt) - t) < 5 * 60 * 1000;
-    });
-  }).map(function (l) { return Object.assign({}, l, { local: true }); });
-  return server.concat(local).sort(function (a, b) { return Date.parse(b.endedAt) - Date.parse(a.endedAt); });
-}
-
-function renderRaceHistory() {
-  const items = mergedRaces();
-  $('raceHistory').hidden = items.length === 0;
-  updateEmptyStates();
-  let html = '';
-  for (let i = 0; i < items.length; i++) {
-    const r = items[i];
-    const when = new Date(r.endedAt).toLocaleString(undefined, ledgerTime);
-    const time = r.seconds === null ? 'DNF' : r.seconds + 's';
-    if (r.local) {
-      html += '<li><span class="place">' + (r.kind === 'Practice' ? '\u2014' : ordinal(r.rank)) + '</span>' +
-        '<span><b>' + r.wpm + '</b> wpm</span>' +
-        '<span>' + r.accuracy + '%<span class="lbl"> acc</span></span>' +
-        '<span>' + time + '</span>' +
-        '<span class="tag">' + r.kind + '</span>' +
-        '<span class="muted">no coins or rating</span>' +
-        '<span class="muted">' + esc(r.room) + ' \u00b7 ' + when + '</span></li>';
-      continue;
-    }
-    const coins = r.net === 0 ? '0' : signed(r.net);
-    html += '<li><span class="place' + (r.rank === 1 ? ' first' : '') + '">' + ordinal(r.rank) + '</span>' +
-      '<span><b>' + r.wpm + '</b> wpm</span>' +
-      '<span>' + r.accuracy + '%<span class="lbl"> acc</span></span>' +
-      '<span>' + time + '</span>' +
-      '<span class="' + (r.net < 0 ? 'out' : 'in') + '">' + coins + ' coins</span>' +
-      '<span>rating ' + r.ratingBefore + ' \u2192 ' + r.ratingAfter + '</span>' +
-      '<span class="muted">' + esc(r.room) + ' \u00b7 ' + when + '</span></li>';
-  }
-  $('raceList').innerHTML = html;
-  $('raceMore').hidden = !races_.hasMore;
-  $('raceMore').disabled = races_.loading;
-}
-
-async function loadRaceHistory(reset) {
-  if (races_.loading || !supa) return;
-  races_.loading = true;
-  try {
-    const token = await getAccessToken();
-    const res = await fetch('/api/races?offset=' + (reset ? 0 : races_.items.length), { headers: { Authorization: 'Bearer ' + token } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const page = await res.json();
-    races_.items = reset ? page.items : races_.items.concat(page.items);
-    races_.hasMore = page.hasMore;
-  } catch (e) {
-    // a failed refresh just keeps what is already on screen
-  }
-  races_.loading = false;
-  renderRaceHistory();
-}
-$('raceMore').addEventListener('click', function () { loadRaceHistory(false); });
-
-// Uses the REST API: GET /api/stats and GET /api/leaderboard with the login token.
-async function loadStats() {
-  loadRaceHistory(true);
-  if (!supa) return;
-  try {
-    const headers = { Authorization: 'Bearer ' + await getAccessToken() };
-    const both = await Promise.all([fetch('/api/stats', { headers: headers }), fetch('/api/leaderboard?limit=20', { headers: headers })]);
-    if (!both[0].ok || !both[1].ok) throw new Error('HTTP ' + both[0].status + '/' + both[1].status);
-    const stats = await both[0].json();
-    const board = await both[1].json();
-    renderStats(stats, board.items);
-  } catch (e) {
-    // a failed refresh keeps what is already on screen
-  }
-}
-
-// accuracy over the last races as a small line chart, oldest on the left
-function trendSvg(trend) {
-  if (!trend.length) return '<p class="muted">Finish a race to see your accuracy trend.</p>';
-  const w = 320, h = 110, padL = 34, padR = 10, padT = 12, padB = 18;
-  const values = trend.map(function (t) { return Number(t.accuracy); });
-  const hi = 100;
-  let lo = Math.min.apply(null, values);
-  if (hi - lo < 5) lo = hi - 5; // never zoom in so far that a 1% wobble looks like a crash
-  const x = function (i) { return trend.length === 1 ? (padL + w - padR) / 2 : padL + (i * (w - padL - padR)) / (trend.length - 1); };
-  const y = function (v) { return padT + ((hi - v) * (h - padT - padB)) / (hi - lo); };
-  const points = values.map(function (v, i) { return x(i).toFixed(1) + ',' + y(v).toFixed(1); });
-  const label = 'Accuracy over your last ' + trend.length + (trend.length === 1 ? ' race: ' : ' races: from ') +
-    (trend.length === 1 ? values[0] + '%' : values[0] + '% to ' + values[values.length - 1] + '%');
-  let svg = '<svg class="trend" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(label) + '">' +
-    '<line class="axis" x1="' + padL + '" y1="' + y(hi) + '" x2="' + (w - padR) + '" y2="' + y(hi) + '"/>' +
-    '<line class="axis" x1="' + padL + '" y1="' + y(lo) + '" x2="' + (w - padR) + '" y2="' + y(lo) + '"/>' +
-    '<text x="' + (padL - 6) + '" y="' + (y(hi) + 4) + '" text-anchor="end">' + hi + '%</text>' +
-    '<text x="' + (padL - 6) + '" y="' + (y(lo) + 4) + '" text-anchor="end">' + Math.round(lo) + '%</text>';
-  if (trend.length > 1) svg += '<polyline class="line" points="' + points.join(' ') + '"/>';
-  values.forEach(function (v, i) { svg += '<circle class="dot" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="3.5"/>'; });
-  return svg + '</svg>';
-}
-
-function renderStats(stats, board) {
-  const hasStats = stats && (stats.races > 0 || stats.flaggedRaces > 0);
-  $('myStats').hidden = !hasStats;
-  updateEmptyStates();
-  if (hasStats) {
-    $('statsSummary').innerHTML = '<div><b>' + stats.bestWpm + '</b><span>best WPM</span></div>' +
-      '<div><b>' + stats.avgWpm + '</b><span>avg WPM</span></div>' +
-      '<div><b>' + stats.races + '</b><span>races</span></div>';
-    $('trendChart').innerHTML = trendSvg(stats.trend);
-    let missed = '';
-    stats.mostMissed.forEach(function (m) {
-      missed += '<li><kbd>' + (m.ch === ' ' ? 'space' : esc(m.ch)) + '</kbd><small>\u00d7' + m.misses + '</small></li>';
-    });
-    $('missedList').innerHTML = missed || '<li class="muted">No mistakes yet. Nice.</li>';
-    $('statsNote').hidden = !stats.flaggedRaces;
-    if (stats.flaggedRaces) {
-      $('statsNote').textContent = stats.flaggedRaces + (stats.flaggedRaces === 1 ? ' race was' : ' races were') +
-        ' not counted because anti-cheat flagged unusual typing.';
-    }
-  }
-
-  const rows = board || [];
-  $('board').hidden = rows.length === 0;
-  updateEmptyStates();
-  let html = '';
-  rows.forEach(function (r, i) {
-    html += '<tr' + (r.isYou ? ' class="you"' : '') + '><td>' + (i + 1) + '</td><td>' + esc(r.name) + (r.isYou ? ' (you)' : '') +
-      '</td><td>' + r.rating + '</td><td>' + r.bestWpm + '</td><td>' + r.wins + ' / ' + r.races + '</td></tr>';
-  });
-  $('boardTable').querySelector('tbody').innerHTML = html;
-}
-
-// ---------- wallet: rating, coins and transactions ----------
-const ledgerLabels = { grant: 'Welcome coins', entry: 'Entry fee', reward: 'Prize', refund: 'Refund' };
-
-function signed(n) {
-  return (n > 0 ? '+' : n < 0 ? '\u2212' : '') + Math.abs(n);
-}
-
-const history_ = { type: '', items: [], hasMore: false, loading: false };
-const ledgerTime = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
-
-function renderLedger() {
-  let html = '';
-  for (let i = 0; i < history_.items.length; i++) {
-    const t = history_.items[i];
-    html += '<li><span class="tx ' + (t.amount < 0 ? 'out' : 'in') + '">' + signed(t.amount) + '</span>' +
-      '<span class="what">' + ledgerLabels[t.type] + (t.room ? ' <small>' + esc(t.room) + '</small>' : '') + '</span>' +
-      '<span class="bal">' + t.balance + ' left</span>' +
-      '<span class="when">' + new Date(t.at).toLocaleString(undefined, ledgerTime) + '</span></li>';
-  }
-  $('ledger').innerHTML = html;
-  $('ledgerEmpty').hidden = history_.items.length > 0;
-  $('ledgerMore').hidden = !history_.hasMore;
-  $('ledgerMore').disabled = history_.loading;
-}
-
-// reset = start again from the newest; otherwise add the next page below what is shown
-// Uses the REST API: GET /api/wallet/transactions with the login token.
-async function loadHistory(reset) {
-  if (history_.loading) return;
-  history_.loading = true;
-  $('ledgerMore').disabled = true;
-  const type = history_.type;
-  try {
-    const token = await getAccessToken();
-    const url = '/api/wallet/transactions?offset=' + (reset ? 0 : history_.items.length) + '&type=' + encodeURIComponent(type);
-    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const page = await res.json();
-    if (type === history_.type) { // the filter may have changed while we waited
-      history_.items = reset ? page.items : history_.items.concat(page.items);
-      history_.hasMore = page.hasMore;
-    }
-  } catch (e) {
-    showToast('Could not load your transactions.');
-  }
-  history_.loading = false;
-  renderLedger();
-}
-
-$('ledgerFilters').addEventListener('click', function (event) {
-  const button = event.target.closest('button[data-type]');
-  if (!button) return;
-  history_.type = button.getAttribute('data-type');
-  const all = document.querySelectorAll('#ledgerFilters button');
-  for (let i = 0; i < all.length; i++) all[i].classList.toggle('active', all[i] === button);
-  if (history_.type === '' && state.account) { renderWallet(); return; }
-  history_.items = [];
-  history_.hasMore = false;
-  renderLedger();
-  loadHistory(true);
-});
-$('ledgerMore').addEventListener('click', function () { loadHistory(false); });
-
-function setAccount(account) {
-  state.account = account;
-  renderWallet();
-}
-
-function renderWallet() {
-  const a = state.account;
-  if (!a) return;
-  $('wallet').hidden = false;
-  $('feeNote').textContent = a.entryFee;
-  $('walletStats').innerHTML = '<div><b>' + a.coins + '</b><span>coins</span></div>' +
-    '<div><b>' + a.rating + '</b><span>rating</span></div>' +
-    '<div><b>' + a.wins + '/' + a.races + '</b><span>wins / races</span></div>';
-  // the account message carries the latest 10; any other filter is fetched from the server
-  if (history_.type === '') {
-    history_.items = a.ledger.slice();
-    history_.hasMore = a.ledger.length >= 10;
-    renderLedger();
-  } else {
-    loadHistory(true);
-  }
-  $('walletChip').innerHTML = Number(a.coins) + ' coins<span class="chip-rating"> \u00b7 rating ' + Number(a.rating) + '</span>';
-  $('coinPill').hidden = false;
-  $('coinPill').innerHTML = Number(a.coins) + ' coins<span class="chip-rating"> \u00b7 ' + Number(a.rating) + '</span>';
-  refreshChip();
-}
-
-// coins and rating only matter in ranked races, so a casual room doesn't show them
-function refreshChip() {
-  const casual = state.room && state.room.ranked === false;
-  $('walletChip').hidden = !state.account || !!casual;
-}
-
-function onResult(result) {
-  state.result = result;
-  loadRaceHistory(true); // the race has just been saved: refresh the history
-  if (state.room) render();
-}
+initAccountUi(); // wires the stats, race history and wallet controls (account.js)
 
 // ---------- messages from the server ----------
 function onRoomState(snapshot) {
@@ -693,20 +394,22 @@ function onCountdown(data) {
   buildPassage();
 }
 
-// the server rejected our typing (for example a paste), so go back to its version
 function onResync(data) {
   if (typeof data.seq === 'number' && data.seq !== inputSeq) return; // we have typed since: a newer message decides
   if (composing) { pendingReset = data.input; return; } // changing the box mid-word scrambles phone keyboards
-  lastSent = data.input;
-  setTypingValue(data.input);
-  updatePassage(data.input);
+  applyServerInput(data.input);
+}
+
+function applyServerInput(value) {
+  lastSent = value;
+  setTypingValue(value);
+  updatePassage(value);
 }
 
 function onDisconnect() {
   if (state.room) showToast('Connection lost. Reconnecting...');
 }
 
-// on every (re)connect, take our seat back if we were in a room
 function onConnect() {
   showSearching(false); // a dropped connection also dropped our place in the queue
   watchLobby();
@@ -752,7 +455,7 @@ socket.on('account:state', setAccount);
 socket.on('race:result', onResult);
 socket.on('race:notice', function (data) { showToast(data.message); });
 socket.on('match:status', onMatchStatus);
-socket.on('match:found', onMatchFound);
+socket.on('match:found', function (data) { onEntered({ ok: true, code: data.code }); });
 socket.on('disconnect', onDisconnect);
 socket.on('connect_error', function (err) {
   if (!err || err.message !== 'unauthorized') showToast('Cannot reach the server. Retrying...');
@@ -777,7 +480,6 @@ function render() {
     racing: practice ? 'Practice in progress' : 'Race in progress',
     finished: practice ? 'Practice finished' : 'Race finished',
   };
-
   $('roomCode').textContent = room.code;
   $('status').textContent = '';
   const main = document.createElement('span');
@@ -789,7 +491,6 @@ function render() {
   $('status').appendChild(extra);
   $('room').dataset.status = room.status;
   $('countOverlay').hidden = room.status !== 'countdown' || inLobby;
-  // back to the room's waiting lobby: the host, when racing alone or once the race is over
   $('toLobby').hidden = !(room.hostId === socket.id && (room.status === 'finished' || (practice && room.status !== 'lobby')));
   $('room').dataset.solo = practice ? '1' : '0';
   $('stats').hidden = room.status === 'lobby' || inLobby;
@@ -797,12 +498,9 @@ function render() {
   $('hint').hidden = room.status !== 'racing' || inLobby;
   $('statWpm').textContent = me.wpm;
   $('statAcc').textContent = me.accuracy;
-
   renderLanes(room);
   renderPanel(room, me, index + 1);
   saveLocalRace(room, me, index + 1);
-
-  // you can only type while the race is on and you haven't finished
   const canType = room.status === 'racing' && me.entered && !me.finished;
   if (canType && $('typing').disabled) {
     const restore = state.restore;
@@ -854,7 +552,6 @@ function capital(word) {
   return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
-// the host picks how hard the next passage is; everyone else just sees it
 function difficultyHtml(room, isHost) {
   if (!isHost) return '<p class="muted">Difficulty: ' + capital(room.difficulty) + '</p>';
   let html = '<div class="difficulty" role="group" aria-label="Passage difficulty"><span class="muted">Difficulty</span>';
@@ -870,9 +567,7 @@ function renderPanel(room, me, rank) {
   const winner = room.players[0];
   const practice = room.players.length === 1; // alone in the room
   let html = '';
-
   if (me.lobby && room.status !== 'lobby') {
-    // joined while someone was practicing: this player is in the lobby, not in the practice
     const busy = room.status === 'countdown' || room.status === 'racing';
     const names = room.players.filter(function (p) { return !p.lobby; }).map(function (p) { return esc(p.name); }).join(', ');
     html = '<h2>You are in the lobby</h2>' +
@@ -886,15 +581,9 @@ function renderPanel(room, me, rank) {
     $('resultOverlay').hidden = true;
     $('resultCard').innerHTML = '';
     $('panel').innerHTML = html;
-    if ($('start')) $('start').addEventListener('click', startRace);
-    document.querySelectorAll('#panel [data-difficulty]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        socket.emit('room:difficulty', { difficulty: button.getAttribute('data-difficulty') });
-      });
-    });
+    wirePanel();
     return;
   }
-
   if (room.status === 'lobby') {
     html = '<h2>' + (room.players.length === 1 ? 'Waiting for racers' : 'Ready to race') + '</h2>' +
       '<p class="share-line">Share the code <strong>' + room.code + '</strong> or tap it above to copy an invite link.</p>' +
@@ -926,7 +615,6 @@ function renderPanel(room, me, rank) {
     if (winner.finished && winner.id !== me.id) html += ' ' + esc(winner.name) + ' won at ' + winner.wpm + ' WPM.';
     html += '</p>';
     if (practice && me.entered) {
-      // alone in the room: the fee is handed back and the rating stays put, so there is no payout table to show
       html += '<p class="muted">' + (room.ranked
         ? 'Practice run: it was free, and your rating did not change.'
         : 'Practice run: no coins or rating changed.') + '</p>';
@@ -940,7 +628,6 @@ function renderPanel(room, me, rank) {
     if (isHost) html += '<button id="start" class="btn" type="button">' + (waitingNames.length > 0 ? 'Start race' : practice ? 'Practice again' : 'Race again') + '</button>';
     else html += '<p>Waiting for the host to start another race.</p>';
   }
-
   const finished = room.status === 'finished';
   if (!finished) state.resultDismissed = false;
   if (finished) {
@@ -962,6 +649,10 @@ function renderPanel(room, me, rank) {
     $('resultCard').innerHTML = '';
     $('panel').innerHTML = html;
   }
+  wirePanel();
+}
+
+function wirePanel() {
   if ($('start')) $('start').addEventListener('click', startRace);
   document.querySelectorAll('#panel [data-difficulty], #resultCard [data-difficulty]').forEach(function (button) {
     button.addEventListener('click', function () {
@@ -970,7 +661,6 @@ function renderPanel(room, me, rank) {
   });
 }
 
-// what this race cost and paid, plus the rating change
 function resultHtml(me) {
   const r = state.result;
   if (!me.entered || !r) return '';
@@ -986,9 +676,7 @@ $('toLobby').addEventListener('click', function () {
   socket.emit('room:lobby');
 });
 
-function startRace() {
-  socket.emit('race:start');
-}
+function startRace() { socket.emit('race:start'); }
 
 // ---------- the passage ----------
 function buildPassage() {
@@ -1003,8 +691,6 @@ function buildPassage() {
   updatePassage('');
 }
 
-// ok = typed right, bad = typed wrong, cur = the next letter to type
-// wip = letters the phone keyboard is still building (not judged yet)
 function updatePassage(input, pending) {
   pending = pending || 0;
   for (let i = 0; i < state.chars.length; i++) {
@@ -1017,13 +703,9 @@ function updatePassage(input, pending) {
   }
 }
 
-
-
 // ---------- typing ----------
 const MAX_WRONG = 10; // same limit as the server
 
-// Phone keyboards swap plain characters for fancy ones (curly quotes, long dashes, odd spaces). The passage only
-// uses plain ones, so treat them as the plain character (the server does the same).
 function normalizeTyped(text) {
   return String(text)
     .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
@@ -1045,9 +727,6 @@ function setTypingValue(value) {
   try { box.setSelectionRange(value.length, value.length); } catch (e) { /* not every browser allows it */ }
 }
 
-// A stray key at the very start (for example tapped while the keyboard slides up) pushes every later letter one
-// place out, so correct typing looks wrong. If dropping 1-3 leading keys makes what was typed match the start of
-// the passage, drop them.
 function dropStrayStart(value) {
   if (value.length < 4 || value[0] === state.text[0]) return value;
   for (let j = 1; j <= 3; j++) {
@@ -1057,8 +736,6 @@ function dropStrayStart(value) {
   return value;
 }
 
-// The box is only ever appended to or backspaced. If the phone moves the caret to the start, every new letter goes
-// in front of the others and the text comes out backwards ("eht" for "the"): put the caret back at the end.
 function caretToEnd() {
   const box = $('typing');
   const end = box.value.length;
@@ -1071,8 +748,6 @@ function onTyping() {
   caretToEnd();
   const raw = $('typing').value;
   let full = normalizeTyped(raw);
-  // Phone keyboards rewrite the word they are building (autocorrect, suggestions). That word is not final, so it
-  // is not marked wrong and not sent until the keyboard commits it (space, punctuation or finishing the word).
   let pending = 0;
   if (composing) pending = full.length - (full.lastIndexOf(' ') + 1);
   let value = full.slice(0, full.length - pending);
@@ -1098,32 +773,23 @@ function onTyping() {
   }
 }
 
-function onCompositionStart() {
-  composing = true;
-}
-
 function onCompositionEnd() {
   composing = false;
   if (pendingReset !== null) { // the server rejected something while the word was being built
     const v = pendingReset;
     pendingReset = null;
-    lastSent = v;
-    setTypingValue(v);
-    updatePassage(v);
+    applyServerInput(v);
     return;
   }
   onTyping(); // word finished: judge it now
 }
 
-function blockEvent(event) {
-  event.preventDefault();
-}
+function blockEvent(event) { event.preventDefault(); }
 
 function refocus() {
   if (!$('typing').disabled && document.activeElement === document.body) $('typing').focus();
 }
 
-// Phones only open the keyboard when the player taps, so the passage is a big tap target and says so.
 function focusTyping() {
   const box = $('typing');
   if (box.disabled) return;
@@ -1146,7 +812,7 @@ function keepPassageVisible() { // the on-screen keyboard covers the bottom half
 }
 
 $('typing').addEventListener('input', onTyping);
-$('typing').addEventListener('compositionstart', onCompositionStart);
+$('typing').addEventListener('compositionstart', function () { composing = true; });
 $('typing').addEventListener('compositionend', onCompositionEnd);
 $('typing').addEventListener('focus', function () { caretToEnd(); updateTapHint(); keepPassageVisible(); });
 $('typing').addEventListener('select', caretToEnd);
@@ -1158,8 +824,7 @@ if (window.visualViewport) {
   });
 }
 if (isTouch) $('hint').textContent = 'Tap the passage if the keyboard closes.';
-const blocked = ['paste', 'cut', 'drop'];
-for (let i = 0; i < blocked.length; i++) $('typing').addEventListener(blocked[i], blockEvent);
+['paste', 'cut', 'drop'].forEach(function (name) { $('typing').addEventListener(name, blockEvent); });
 $('passage').addEventListener('click', focusTyping);
 document.addEventListener('keydown', refocus);
 
@@ -1168,10 +833,7 @@ function updateClock() {
   const room = state.room;
   if (!room) return;
   const now = Date.now() + state.offset;
-
-  if (room.status === 'countdown' && $('count')) {
-    $('count').textContent = Math.max(1, Math.ceil((state.startAt - now) / 1000));
-  }
+  if (room.status === 'countdown' && $('count')) $('count').textContent = Math.max(1, Math.ceil((state.startAt - now) / 1000));
   if (room.status === 'racing') $('statTime').textContent = formatTime(state.startAt + state.limitMs - now);
   else if (room.status === 'finished') $('statTime').textContent = 'Done';
   else $('statTime').textContent = formatTime(state.limitMs);
@@ -1180,7 +842,6 @@ function updateClock() {
 setInterval(updateClock, 100);
 
 startAuth();
-
 
 // ---------- fixed header: keep the page content clear of it ----------
 (function () {
