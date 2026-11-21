@@ -624,7 +624,7 @@ body.has-nav main { padding-top: 1.5rem; }
   #home[data-tab="play"] { display: grid; grid-template-columns: 6fr 5fr; column-gap: 2.5rem; align-items: start; }
   #home[data-tab="play"] .hero-title { grid-column: 1 / -1; }
   #home[data-tab="play"] .join-card { grid-column: 1; grid-row: 2; max-width: none; margin: 0; }
-  #home[data-tab="play"] .lobby { grid-column: 2; grid-row: 2; margin: 0; align-self: stretch; display: flex; flex-direction: column; }
+  #home[data-tab="play"] .lobby { grid-column: 2; grid-row: 2; margin: 0; align-self: start; display: flex; flex-direction: column; }
   #home[data-tab="play"] .lobby-list { max-height: 26rem; overflow-y: auto; }
 }
 .join-card { max-width: none; }
