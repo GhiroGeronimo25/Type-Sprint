@@ -13,7 +13,7 @@ module.exports = function (app, accounts, requireLogin) {
     const key = ip + ' ' + (req.path || '');
     const now = Date.now();
     const hits = (authHits[key] || []).filter(function (t) { return now - t < AUTH_WINDOW_MS; });
-    if (hits.length >= AUTH_LIMIT) return res.status(429).json({ error: 'Too many attempts. Wait a minute and try again.' });
+    if (hits.length >= AUTH_LIMIT) return res.status(429).json({ error: 'Too many attempts. Wait a minute, then try again.' });
     hits.push(now);
     authHits[key] = hits;
     next();
@@ -27,21 +27,21 @@ module.exports = function (app, accounts, requireLogin) {
   }, 60000).unref();
 
   const AUTH_ERRORS = { // what accounts.js reports -> [status, what the caller is told]
-    invalid_credentials: [401, 'Wrong email or password.'],
-    email_taken: [409, 'That email already has an account.'],
-    username_taken: [409, 'That username is taken.'],
-    weak_password: [422, 'That password is too weak. Use at least 8 characters.'],
-    unconfirmed: [403, 'Confirm your email first, then log in.'],
-    invalid_refresh: [401, 'Your login has expired. Log in again.'],
-    rate_limited: [429, 'Too many attempts. Wait a minute and try again.'],
-    not_configured: [503, 'Login is not set up on this server.'],
+    invalid_credentials: [401, 'Incorrect email or password. Check both and try again.'],
+    email_taken: [409, 'That email already has an account. Try logging in instead.'],
+    username_taken: [409, 'That username is taken. Try another one.'],
+    weak_password: [422, 'That password is too weak. Use at least 8 characters and avoid common passwords.'],
+    unconfirmed: [403, 'Your email isn\u2019t confirmed yet. Open the link we emailed you, then log in.'],
+    invalid_refresh: [401, 'Your session expired. Please log in again.'],
+    rate_limited: [429, 'Too many attempts. Wait a minute, then try again.'],
+    not_configured: [503, 'Login isn\u2019t available right now. Please try again later.'],
   };
 
   function authFail(res, what, e) {
     const known = AUTH_ERRORS[e && e.code];
     if (known) return res.status(known[0]).json({ error: known[1] });
     console.error(what + ' failed:', e && e.message); // never the password or tokens: they are not in the message
-    res.status(502).json({ error: 'Could not reach the login service. Please try again.' });
+    res.status(502).json({ error: 'We couldn\u2019t reach the login service. Please try again in a moment.' });
   }
 
   function cleanEmail(v) {
@@ -51,17 +51,17 @@ module.exports = function (app, accounts, requireLogin) {
   app.post('/api/auth/signup', authLimit, async function (req, res) {
     const body = req.body || {};
     const email = cleanEmail(body.email);
-    if (!email) return res.status(400).json({ error: 'Enter a valid email address.' });
+    if (!email) return res.status(400).json({ error: 'That email doesn\u2019t look right. Check it for typos.' });
     if (typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 72) {
-      return res.status(400).json({ error: 'The password must be 8 to 72 characters.' });
+      return res.status(400).json({ error: 'Your password must be 8 to 72 characters.' });
     }
     if (typeof body.username !== 'string' || !USERNAME_RE.test(body.username)) {
-      return res.status(400).json({ error: 'Username: 3-16 letters, numbers, dots, dashes or underscores.' });
+      return res.status(400).json({ error: 'Usernames use 3 to 16 letters, numbers, dots, dashes or underscores.' });
     }
     try {
-      if (!(await accounts.usernameAvailable(body.username))) return res.status(409).json({ error: 'That username is taken.' });
+      if (!(await accounts.usernameAvailable(body.username))) return res.status(409).json({ error: 'That username is taken. Try another one.' });
       const out = await accounts.signUp(email, body.password, body.username, typeof body.redirectTo === 'string' ? body.redirectTo.slice(0, 200) : '');
-      res.status(201).json(out.session ? out : { user: out.user, session: null, message: 'Check your email to confirm your account, then log in.' });
+      res.status(201).json(out.session ? out : { user: out.user, session: null, message: 'Account created. Check your email to confirm it, then log in.' });
     } catch (e) {
       authFail(res, 'Sign-up', e);
     }

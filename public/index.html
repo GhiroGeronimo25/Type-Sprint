@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=45">
+  <link rel="stylesheet" href="style.css?v=46">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -41,6 +41,7 @@
           <form id="loginForm" class="auth-pane" aria-labelledby="loginTitle" novalidate>
             <h2 id="loginTitle" class="auth-title">Welcome back</h2>
             <p class="auth-sub">Pick up where you left off.</p>
+            <div id="loginMsg" class="auth-msg" hidden></div>
             <div class="field">
               <label for="loginEmail">Email</label>
               <input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
@@ -53,7 +54,6 @@
               </div>
             </div>
             <div class="auth-foot">
-              <p id="loginMsg" class="auth-msg" role="alert" hidden></p>
               <div class="actions"><button id="loginSubmit" class="btn" type="submit">Log in</button></div>
               <p class="auth-switch">New here? <button type="button" class="link-btn" data-switch="signup">Create an account</button></p>
             </div>
@@ -63,6 +63,7 @@
           <form id="signupForm" class="auth-pane" aria-labelledby="signupTitle" novalidate>
             <h2 id="signupTitle" class="auth-title">Create your account</h2>
             <p class="auth-sub">Pick a name and hit the track.</p>
+            <div id="signupMsg" class="auth-msg" hidden></div>
             <div class="field">
               <label for="signupUsername">Username</label>
               <input id="signupUsername" type="text" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="e.g. speedy_fingers">
@@ -79,7 +80,6 @@
               </div>
             </div>
             <div class="auth-foot">
-              <p id="signupMsg" class="auth-msg" role="alert" hidden></p>
               <div class="actions"><button id="signupSubmit" class="btn" type="submit">Create account</button></div>
               <p class="auth-switch">Already racing? <button type="button" class="link-btn" data-switch="login">Log in</button></p>
             </div>
@@ -118,68 +118,62 @@
       <span class="sticker" data-pane="play">Up to 15 racers<br>live scoring</span>
 
       <div class="join-card" data-pane="play">
+        <h2 class="step-title">Choose your race</h2>
 
-        <div class="setup-step">
-          <h2 class="step-title">Choose your race</h2>
+        <fieldset class="opt-group">
+          <legend>Race type</legend>
+          <div class="pills cols-2">
+            <label><input type="radio" name="mode" value="ranked" data-hint="Entry fee, prizes and rating changes." checked><span>Ranked</span></label>
+            <label><input type="radio" name="mode" value="casual" data-hint="Free. No coins or rating at stake."><span>Casual</span></label>
+          </div>
+          <p class="opt-hint" data-hint-for="mode" aria-live="polite"></p>
+        </fieldset>
 
-          <fieldset class="seg-group">
-            <legend>Race type</legend>
-            <div class="seg cols-2">
-              <label><input type="radio" name="mode" value="ranked" checked><span><b>Ranked</b><small>Entry fee, prizes, rating changes</small></span></label>
-              <label><input type="radio" name="mode" value="casual"><span><b>Casual</b><small>Free, no coins or rating</small></span></label>
-            </div>
-          </fieldset>
+        <fieldset class="opt-group">
+          <legend>Passage difficulty</legend>
+          <div class="pills cols-3">
+            <label><input type="radio" name="difficulty" value="easy" data-hint="Short passage, everyday words."><span>Easy</span></label>
+            <label><input type="radio" name="difficulty" value="medium" data-hint="A full paragraph." checked><span>Medium</span></label>
+            <label><input type="radio" name="difficulty" value="hard" data-hint="Long words, numbers and punctuation."><span>Hard</span></label>
+          </div>
+          <p class="opt-hint" data-hint-for="difficulty" aria-live="polite"></p>
+        </fieldset>
 
-          <fieldset class="seg-group">
-            <legend>Passage difficulty</legend>
-            <div class="seg cols-3">
-              <label><input type="radio" name="difficulty" value="easy"><span><b>Easy</b><small>Short, everyday words</small></span></label>
-              <label><input type="radio" name="difficulty" value="medium" checked><span><b>Medium</b><small>A full paragraph</small></span></label>
-              <label><input type="radio" name="difficulty" value="hard"><span><b>Hard</b><small>Long words, numbers, punctuation</small></span></label>
-            </div>
-          </fieldset>
+        <div class="start-option">
+          <button id="quick" class="btn big" type="button">Quick match</button>
+          <div id="searching" class="searching" role="status" aria-live="polite" hidden>
+            <span class="search-label"><i class="search-dot" aria-hidden="true"></i><span id="searchText">Searching for opponents...</span></span>
+            <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
+          </div>
+          <p id="quickHint" class="muted">Instantly find opponents with a similar rating.</p>
         </div>
 
-        <div class="setup-step">
-          <h2 class="step-title">Pick how to start</h2>
-
-          <div class="start-option">
-            <button id="quick" class="btn big" type="button">Quick match</button>
-            <div id="searching" class="searching" role="status" aria-live="polite" hidden>
-              <span class="search-label"><i class="search-dot" aria-hidden="true"></i><span id="searchText">Searching for opponents...</span></span>
-              <button id="cancelSearch" class="btn ghost" type="button">Cancel</button>
-            </div>
-            <p id="quickHint" class="muted">Instantly find opponents with a similar rating.</p>
-          </div>
-
-          <div class="start-or" aria-hidden="true"><span>or play with friends</span></div>
-
-          <div class="start-split">
-            <div class="start-card">
-              <h3>Create a room</h3>
-              <p class="muted">Host a room and share the code.</p>
-              <fieldset class="seg-group size-group">
-                <legend>Players in the room</legend>
-                <div class="seg cols-3">
-                  <label><input type="radio" name="size" value="5" checked><span><b>5</b></span></label>
-                  <label><input type="radio" name="size" value="10"><span><b>10</b></span></label>
-                  <label><input type="radio" name="size" value="15"><span><b>15</b></span></label>
+        <details class="friends">
+          <summary>Play with friends</summary>
+          <div class="friends-body">
+            <div class="friends-row">
+              <span class="friends-label">Create a room</span>
+              <fieldset class="opt-group size-group">
+                <legend class="sr-only">Players in the room</legend>
+                <div class="pills cols-3">
+                  <label><input type="radio" name="size" value="5" checked><span>5</span></label>
+                  <label><input type="radio" name="size" value="10"><span>10</span></label>
+                  <label><input type="radio" name="size" value="15"><span>15</span></label>
                 </div>
               </fieldset>
-              <button id="create" class="btn secondary big" type="button">Create room</button>
+              <button id="create" class="btn secondary" type="button">Create room</button>
+              <p class="opt-hint">Players in the room. You get a code to share.</p>
             </div>
-
-            <div class="start-card">
-              <h3>Join a room</h3>
-              <p class="muted">Have a four-letter code? Enter it here.</p>
-              <div class="seg-group code-group">
-                <label class="legend" for="code">Room code</label>
+            <div class="friends-row">
+              <label class="friends-label" for="code">Join a room</label>
+              <div class="join-line">
                 <input id="code" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
+                <button id="join" class="btn secondary" type="button">Join room</button>
               </div>
-              <button id="join" class="btn secondary big" type="button">Join room</button>
+              <p class="opt-hint">Have a four-letter code? Enter it here.</p>
             </div>
           </div>
-        </div>
+        </details>
       </div>
 
       <!-- Wallet and transactions -->
@@ -292,6 +286,6 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="account.js?v=1"></script>
-  <script src="app.js?v=37"></script>
+  <script src="app.js?v=38"></script>
 </body>
 </html>

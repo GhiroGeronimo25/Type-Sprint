@@ -64,12 +64,35 @@ async function onSignOut() {
   if (token) postJson('/api/auth/logout', {}, token).catch(function () {}); // revokes the login on the server
 }
 
-function showAuthMessage(text, isError, mode) {
+// kind: 'error' | 'success' | 'info'. title is the short headline, text the detail line.
+function showAuthMessage(title, kind, mode, text) {
   const el = $((mode || authMode) === 'signup' ? 'signupMsg' : 'loginMsg');
-  el.hidden = !text;
-  el.textContent = text || '';
-  el.classList.toggle('error', !!isError);
+  el.textContent = '';
+  el.hidden = !title;
+  el.classList.remove('error', 'success', 'info');
+  if (!title) return;
+  if (kind === true) kind = 'error';
+  if (!kind) kind = 'info';
+  el.classList.add(kind);
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  const head = document.createElement('strong');
+  head.textContent = title;
+  el.appendChild(head);
+  if (text) {
+    const body = document.createElement('span');
+    body.textContent = text;
+    el.appendChild(body);
+  }
 }
+
+function markInvalid(ids) {
+  ['loginEmail', 'loginPassword', 'signupUsername', 'signupEmail', 'signupPassword'].forEach(function (id) {
+    if (ids.indexOf(id) === -1) $(id).removeAttribute('aria-invalid');
+    else $(id).setAttribute('aria-invalid', 'true');
+  });
+}
+
+const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 let authMode = 'login';
 const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
@@ -77,8 +100,9 @@ const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
 // Log in (left) and Sign up (right) share one card; a sliding cover hides whichever one is not in use.
 function setAuthMode(mode) {
   authMode = mode;
-  showAuthMessage('', false, 'login');
-  showAuthMessage('', false, 'signup');
+  showAuthMessage('', '', 'login');
+  showAuthMessage('', '', 'signup');
+  markInvalid([]);
   const signup = mode === 'signup';
   $('authCard').dataset.mode = mode;
   // the covered form stays hidden from tabbing and screen readers
@@ -100,27 +124,40 @@ function sizeAuth() {
 async function onAuthSubmit(event, mode) {
   event.preventDefault();
   const signup = mode === 'signup';
-  const msg = function (text, isError) { showAuthMessage(text, isError, mode); };
+  const pre = signup ? 'signup' : 'login';
+  const msg = function (title, kind, text, fields) {
+    markInvalid(fields || []);
+    showAuthMessage(title, kind, mode, text);
+  };
   const btn = $(signup ? 'signupSubmit' : 'loginSubmit');
   const label = signup ? 'Create account' : 'Log in';
   msg('');
-  const email = $(signup ? 'signupEmail' : 'loginEmail').value.trim();
-  const password = $(signup ? 'signupPassword' : 'loginPassword').value;
-  if (!email || password.length < 8) return msg('Enter an email and a password of at least 8 characters.', true);
+  const username = signup ? $('signupUsername').value.trim() : '';
+  const email = $(pre + 'Email').value.trim();
+  const password = $(pre + 'Password').value;
+  if (signup && !USERNAME_RE.test(username)) {
+    return msg(username ? 'That username won\u2019t work.' : 'Pick a username.', 'error', 'Use 3 to 16 letters, numbers, dots, dashes or underscores.', ['signupUsername']);
+  }
+  if (!email) return msg('Enter your email.', 'error', '', [pre + 'Email']);
+  if (!EMAIL_OK.test(email)) return msg('That email doesn\u2019t look right.', 'error', 'Check it for typos, like name@example.com.', [pre + 'Email']);
+  if (!password) return msg('Enter your password.', 'error', '', [pre + 'Password']);
+  if (signup && password.length < 8) return msg('Password is too short.', 'error', 'Use at least 8 characters.', [pre + 'Password']);
   btn.disabled = true;
-  btn.textContent = 'Please wait...';
+  btn.textContent = signup ? 'Creating account...' : 'Logging in...';
   try {
     if (!signup) {
       const res = await postJson('/api/auth/login', { email: email, password: password });
-      if (!res.ok) return msg(res.data.error || 'Something went wrong. Please try again.', true);
+      if (!res.ok) return msg(res.data.error || 'Something went wrong. Try again.', 'error', '', res.status === 401 ? ['loginEmail', 'loginPassword'] : []);
       auth = res.data;
       saveAuth();
       return onAuthChange();
     }
-    const username = $('signupUsername').value.trim();
-    if (!USERNAME_RE.test(username)) return msg('Username: 3-16 letters, numbers, dots, dashes or underscores.', true);
     const res = await postJson('/api/auth/signup', { email: email, password: password, username: username, redirectTo: window.location.origin });
-    if (!res.ok) return msg(res.data.error || 'Something went wrong. Please try again.', true);
+    if (!res.ok) {
+      const taken = res.status === 409;
+      const field = /username/i.test(res.data.error || '') ? 'signupUsername' : /email/i.test(res.data.error || '') ? 'signupEmail' : '';
+      return msg(res.data.error || 'Something went wrong. Try again.', 'error', '', taken && field ? [field] : []);
+    }
     if (res.data.session) {
       auth = res.data;
       saveAuth();
@@ -128,9 +165,11 @@ async function onAuthSubmit(event, mode) {
     }
     $('loginEmail').value = email;
     setAuthMode('login'); // with email confirmation switched on there is no session yet
-    showAuthMessage('Account created. Check your email to confirm it, then log in.', false, 'login');
+    markInvalid([]);
+    showAuthMessage('Account created!', 'success', 'login', 'We sent a confirmation link to ' + email + '. Open it, then log in here.');
+    $('loginPassword').focus({ preventScroll: true });
   } catch (e) {
-    msg('Could not reach the server. Please try again.', true);
+    msg('Can\u2019t reach the server.', 'error', 'Check your connection and try again.');
   } finally {
     btn.disabled = false;
     btn.textContent = label;
@@ -366,6 +405,14 @@ function showSearching(on) {
   if (on) $('searchText').textContent = 'Searching for opponents...';
 }
 
+function updateRaceHints() {
+  ['mode', 'difficulty'].forEach(function (name) {
+    const on = document.querySelector('input[name="' + name + '"]:checked');
+    const hint = document.querySelector('[data-hint-for="' + name + '"]');
+    if (hint) hint.textContent = on ? on.getAttribute('data-hint') || '' : '';
+  });
+}
+
 function raceSettings() {
   const mode = document.querySelector('input[name="mode"]:checked');
   const level = document.querySelector('input[name="difficulty"]:checked');
@@ -440,6 +487,8 @@ $('copyLink').addEventListener('click', copyLink);
 
 try { localStorage.removeItem('records'); } catch (e) { /* storage can be blocked */ }
 
+document.querySelectorAll('input[name="mode"], input[name="difficulty"]').forEach(function (r) { r.addEventListener('change', updateRaceHints); });
+updateRaceHints();
 initAccountUi(); // wires the stats, race history and wallet controls (account.js)
 
 // ---------- messages from the server ----------
