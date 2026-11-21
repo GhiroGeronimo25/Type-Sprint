@@ -61,7 +61,7 @@ function renderRaceHistory() {
         '<span>' + time + '</span>' +
         '<span class="tag">' + r.kind + '</span>' +
         '<span class="muted">no coins or rating</span>' +
-        '<span class="muted">' + esc(r.room) + ' \u00b7 ' + when + '</span></li>';
+        '<span class="muted">' + when + '</span></li>';
       continue;
     }
     const coins = r.net === 0 ? '0' : signed(r.net);
@@ -70,8 +70,8 @@ function renderRaceHistory() {
       '<span>' + r.accuracy + '%<span class="lbl"> acc</span></span>' +
       '<span>' + time + '</span>' +
       '<span class="' + (r.net < 0 ? 'out' : 'in') + '">' + coins + ' coins</span>' +
-      '<span>rating ' + r.ratingBefore + ' \u2192 ' + r.ratingAfter + '</span>' +
-      '<span class="muted">' + esc(r.room) + ' \u00b7 ' + when + '</span></li>';
+      '<span>Rating ' + r.ratingBefore + ' \u2192 ' + r.ratingAfter + '</span>' +
+      '<span class="muted">' + when + '</span></li>';
   }
   $('raceList').innerHTML = html;
   $('raceMore').hidden = !races_.hasMore;

@@ -437,7 +437,7 @@ input[type="text"]:focus { outline: none; background: #fff; box-shadow: 4px 4px 
 .statcard { background: var(--white); color: var(--ink); border: var(--line); border-radius: var(--radius); box-shadow: 8px 8px 0 var(--ink); padding: 1.25rem 1.5rem 1.5rem; margin-top: 2rem; animation: rise 0.4s ease-out 0.12s backwards; }
 .statcard h2 { margin: 0; font-size: 1.8rem; font-weight: 800; font-stretch: 75%; }
 .statcard h3 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--muted); }
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.25rem; }
+.stats-grid { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
 .trend { width: 100%; height: auto; max-width: 420px; display: block; }
 .trend .line { fill: none; stroke: var(--cobalt); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
 .trend .dot { fill: var(--cobalt); }
