@@ -11,7 +11,10 @@ const createMatchmaker = require('./matchmaker'); // the quick-match queue
 const PORT = process.env.PORT || 3000;
 const COUNTDOWN_MS = Number(process.env.COUNTDOWN_MS) || 3000; // wait before the race starts (env override is for tests)
 const RACE_MS = Number(process.env.RACE_MS) || 60000;           // race length
-const MAX_PLAYERS = 5;
+const MAX_PLAYERS = 5;               // default room size, and the fixed size of quick-match rooms
+const ROOM_SIZES = [5, 10, 15];      // sizes a host can pick when creating a room
+function roomCap(room) { return room.maxPlayers || MAX_PLAYERS; }
+function isRoomSize(value) { return ROOM_SIZES.indexOf(value) >= 0; }
 const GRACE_MS = 120000;   // how long a disconnected player's seat is held for them
 const MAX_CPS = 25;        // fastest believable typing speed (characters per second); anything beyond is rejected and flagged
 const FLAG_WPM = 250;      // an average speed no human sustains: flagged (needs FLAG_MIN_LETTERS so a short burst can't trip it)
@@ -263,13 +266,13 @@ function openRooms() {
     const room = rooms[code];
     const practicing = !!room.practice && (room.status === 'countdown' || room.status === 'racing');
     if (!((room.status === 'lobby' && !room.starting) || practicing) || room.listed === false) return; // a race with others is already on, or a quick-match room
-    if (room.players.length >= MAX_PLAYERS) return;
+    if (room.players.length >= roomCap(room)) return;
     const here = room.players.filter(function (p) { return !p.away; });
     if (here.length === 0) return;
     const host = findById(room, room.hostId) || here[0];
     list.push({
       code: room.code, host: host.name, ranked: room.ranked, difficulty: room.difficulty,
-      practicing: practicing, players: room.players.length, max: MAX_PLAYERS, fee: ENTRY_FEE, createdAt: room.createdAt || 0,
+      practicing: practicing, players: room.players.length, max: roomCap(room), fee: ENTRY_FEE, createdAt: room.createdAt || 0,
     });
   });
   list.sort(function (a, b) { return b.createdAt - a.createdAt; });
@@ -317,6 +320,7 @@ function broadcast(room) {
     serverNow: Date.now(),
     ranked: room.ranked,
     difficulty: room.difficulty,
+    maxPlayers: roomCap(room),
     fee: ENTRY_FEE,
     pot: room.pot || 0,
     players: players,
@@ -617,7 +621,7 @@ function startMatch(group) {
   const first = group.filter(function (t) { return t.socket; })[0];
   const waiting = group.filter(function (t) { return !t.socket; }); // REST searchers: they still have to connect
   const room = {
-    code: randomCode(), hostId: first ? first.socket.id : null, ranked: group[0].ranked, difficulty: group[0].difficulty,
+    code: randomCode(), hostId: first ? first.socket.id : null, ranked: group[0].ranked, difficulty: group[0].difficulty, maxPlayers: MAX_PLAYERS,
     status: 'lobby', text: '', startAt: 0, players: [], listed: false, createdAt: Date.now(), // quick-match rooms start at once: not listed
   };
   if (waiting.length > 0) room.matchPids = group.map(function (t) { return t.pid; });
@@ -666,6 +670,7 @@ function restName(user) {
 function checkRaceSettings(body) {
   if (body.ranked !== undefined && typeof body.ranked !== 'boolean') return '"ranked" must be true or false.';
   if (body.difficulty !== undefined && !passages.isDifficulty(body.difficulty)) return '"difficulty" must be easy, medium or hard.';
+  if (body.maxPlayers !== undefined && !isRoomSize(body.maxPlayers)) return '"maxPlayers" must be ' + ROOM_SIZES.join(', ') + '.';
   return '';
 }
 
@@ -674,7 +679,7 @@ function roomView(room, pid) {
   return {
     code: room.code, status: room.status, ranked: room.ranked, difficulty: room.difficulty,
     host: host ? host.name : null, players: room.players.map(function (p) { return { name: p.name, rating: p.rating, away: !!p.away }; }),
-    max: MAX_PLAYERS, fee: ENTRY_FEE, pot: room.pot || 0, youAreIn: !!findByPid(room, pid),
+    max: roomCap(room), fee: ENTRY_FEE, pot: room.pot || 0, youAreIn: !!findByPid(room, pid),
   };
 }
 
@@ -697,14 +702,15 @@ app.post('/api/rooms', requireLogin, function (req, res) {
   if (matchmaker.has(pid) || matchFor(pid)) return res.status(409).json({ error: 'You are in matchmaking. Cancel it first.' });
   const room = {
     code: randomCode(), hostId: null, reservedHost: pid, ranked: body.ranked !== false,
-    difficulty: body.difficulty || passages.DEFAULT_DIFFICULTY, status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now(),
+    difficulty: body.difficulty || passages.DEFAULT_DIFFICULTY, maxPlayers: body.maxPlayers || MAX_PLAYERS,
+    status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now(),
   };
   rooms[room.code] = room;
   room.reserveTimer = setTimeout(function () { // the host never connected: free the code
     if (rooms[room.code] === room && room.reservedHost) delete rooms[room.code];
   }, RESERVE_MS);
   if (room.reserveTimer.unref) room.reserveTimer.unref();
-  res.status(201).json({ code: room.code, ranked: room.ranked, difficulty: room.difficulty, expiresInMs: RESERVE_MS });
+  res.status(201).json({ code: room.code, ranked: room.ranked, difficulty: room.difficulty, max: room.maxPlayers, expiresInMs: RESERVE_MS });
 });
 
 app.delete('/api/rooms/:code', requireLogin, function (req, res) {
@@ -774,7 +780,8 @@ function onConnection(socket) {
     if (socket.data.code) return ack({ ok: false, error: 'You are already in a room. Leave it first.' });
     const ranked = (data || {}).ranked !== false; // ranked unless the host picked casual
     const difficulty = passages.isDifficulty((data || {}).difficulty) ? data.difficulty : passages.DEFAULT_DIFFICULTY; // anything else becomes the default
-    const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now() };
+    const maxPlayers = isRoomSize((data || {}).maxPlayers) ? data.maxPlayers : MAX_PLAYERS; // anything else becomes the default
+    const room = { code: randomCode(), hostId: socket.id, ranked: ranked, difficulty: difficulty, maxPlayers: maxPlayers, status: 'lobby', text: '', startAt: 0, players: [], createdAt: Date.now() };
     rooms[room.code] = room;
     const player = joinRoom(socket, room, socket.data.name, socket.data.pid);
     try {
@@ -804,7 +811,7 @@ function onConnection(socket) {
     } else if (started) error = 'That race has already started.';
     else if (room.reservedHost && room.reservedHost !== pid && room.players.length === 0) error = 'The host has not arrived yet.';
     else if (room.matchPids && room.matchPids.indexOf(pid) < 0) error = 'That room is reserved for a matched race.';
-    else if (room.players.length >= MAX_PLAYERS) error = 'That room is full (' + MAX_PLAYERS + ' players max).';
+    else if (room.players.length >= roomCap(room)) error = 'That room is full (' + roomCap(room) + ' players max).';
     if (error) return ack({ ok: false, error: error });
     if (room.reservedHost === pid) {
       room.reservedHost = null;
