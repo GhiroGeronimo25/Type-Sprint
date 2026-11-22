@@ -1,7 +1,10 @@
 'use strict';
 // REST API: sign-up, login, token refresh, logout and profile. Passwords only ever go to Supabase Auth.
 
+const mail = require('./confirm-mail');
+
 module.exports = function (app, accounts, requireLogin) {
+  const CONFIRM_TTL_MS = (Number(process.env.UNCONFIRMED_TTL_MIN) || 60) * 60000; // how long the emailed link works
   const USERNAME_RE = /^[A-Za-z0-9_.-]{3,16}$/;
   const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
   const authHits = {}; // 'ip path' -> [timestamps]: the logged-out endpoints can be guessed at, so they get a stricter limit
@@ -60,10 +63,39 @@ module.exports = function (app, accounts, requireLogin) {
     }
     try {
       if (!(await accounts.usernameAvailable(body.username))) return res.status(409).json({ error: 'That username is taken. Try another one.' });
-      const out = await accounts.signUp(email, body.password, body.username, typeof body.redirectTo === 'string' ? body.redirectTo.slice(0, 200) : '');
-      res.status(201).json(out.session ? out : { user: out.user, session: null, message: 'Account created. Check your email to confirm it, then log in.' });
+      if (!mail.configured()) { const e = new Error('mail not configured'); e.code = 'not_configured'; throw e; }
+      // nothing is saved yet: the details ride inside the emailed link and the account is made when it is clicked
+      const token = mail.makeToken(email, body.password, body.username, CONFIRM_TTL_MS);
+      const base = process.env.PUBLIC_URL || (req.protocol + '://' + req.get('host'));
+      await mail.sendConfirmation(email, body.username, base.replace(/\/+$/, '') + '/api/auth/confirm?token=' + encodeURIComponent(token), CONFIRM_TTL_MS);
+      res.status(201).json({ user: { email: email, username: body.username }, session: null, message: 'Check your email to confirm your account, then log in.' });
     } catch (e) {
       authFail(res, 'Sign-up', e);
+    }
+  });
+
+  function page(res, status, title, text) {
+    const esc = function (v) { return String(v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+    res.status(status).type('html').send('<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Type Sprint</title></head>'
+      + '<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#2043f0;font-family:Arial,Helvetica,sans-serif;padding:16px;box-sizing:border-box;">'
+      + '<div style="max-width:440px;width:100%;background:#fff;color:#0a0f2a;border:3px solid #0a0f2a;border-radius:14px;padding:32px 28px;text-align:center;">'
+      + '<h1 style="margin:0 0 12px;font-size:24px;">' + esc(title) + '</h1><p style="margin:0 0 24px;font-size:16px;line-height:1.55;">' + esc(text) + '</p>'
+      + '<a href="/" style="display:inline-block;padding:14px 32px;background:#ffd23f;border:3px solid #0a0f2a;border-radius:10px;color:#0a0f2a;font-weight:800;text-decoration:none;">Go to Type Sprint</a></div></body></html>');
+  }
+
+  // the link in the confirmation email: this is the moment the login and the game account are created
+  app.get('/api/auth/confirm', authLimit, async function (req, res) {
+    const info = mail.readToken(typeof req.query.token === 'string' ? req.query.token : '');
+    if (info.error === 'expired') return page(res, 410, 'Link expired', 'This confirmation link ran out. Sign up again to get a new one.');
+    if (info.error) return page(res, 400, 'Link not valid', 'This confirmation link doesn\u2019t look right. Try signing up again.');
+    try {
+      await accounts.createConfirmedUser(info.email, info.password, info.username);
+      page(res, 200, 'Email confirmed!', 'Your account is ready. Go back to Type Sprint and log in.');
+    } catch (e) {
+      if (e && e.code === 'email_taken') return page(res, 200, 'Already confirmed', 'This email already has an account. Go back to Type Sprint and log in.');
+      if (e && e.code === 'username_taken') return page(res, 409, 'Username taken', 'Someone took that username while you waited. Sign up again with a different one.');
+      console.error('Confirm failed:', e && e.message);
+      page(res, 502, 'Something went wrong', 'We couldn\u2019t create your account just now. Please try the link again in a moment.');
     }
   });
 

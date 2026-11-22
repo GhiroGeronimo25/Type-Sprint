@@ -166,7 +166,7 @@ async function onAuthSubmit(event, mode) {
     $('loginEmail').value = email;
     setAuthMode('login'); // with email confirmation switched on there is no session yet
     markInvalid([]);
-    showAuthMessage('Account created!', 'success', 'login', 'We sent a confirmation link to ' + email + '. Confirm within 1 hour, or the account is deleted. Then log in here.');
+    showAuthMessage('Check your email!', 'success', 'login', 'We sent a confirmation link to ' + email + '. Your account is only created once you click it (within 1 hour). Then log in here.');
     $('loginPassword').focus({ preventScroll: true });
   } catch (e) {
     msg('Can\u2019t reach the server.', 'error', 'Check your connection and try again.');

@@ -107,6 +107,25 @@ function createAccounts(url, serviceKey, anonKey) {
     return { user: userView(res.data.user), session: sessionView(res.data.session) };
   }
 
+  // Creates the login already confirmed. Called only after the person clicked the link in their email, so nothing
+  // about a sign-up is stored in Supabase before that. The database trigger makes the game account from the username.
+  async function createConfirmedUser(email, password, username) {
+    const res = await db.auth.admin.createUser({ email: email, password: password, email_confirm: true, user_metadata: { username: username } });
+    if (res.error) {
+      const text = String(res.error.code || res.error.message || '');
+      const e = new Error('auth: ' + text);
+      if (/email_exists|already (been )?registered|user_already_exists/i.test(text) || /already (been )?registered/i.test(String(res.error.message))) e.code = 'email_taken';
+      else if (/weak_password/i.test(text)) e.code = 'weak_password';
+      else {
+        e.code = 'auth_failed';
+        // "Database error creating new user" is what a username that was taken a moment ago looks like
+        if (/database error/i.test(String(res.error.message)) && !(await usernameAvailable(username))) e.code = 'username_taken';
+      }
+      throw e;
+    }
+    return { id: res.data.user.id, email: res.data.user.email };
+  }
+
   async function signIn(email, password) {
     const res = await authClient().auth.signInWithPassword({ email: email, password: password });
     if (res.error) throw authError(res.error);
@@ -144,7 +163,12 @@ function createAccounts(url, serviceKey, anonKey) {
     for (let i = 0; i < stale.length; i++) { // collected first: deleting while paging would skip people
       const del = await db.auth.admin.deleteUser(stale[i]);
       if (del.error) console.error('Could not remove unconfirmed user ' + stale[i] + ':', del.error.message);
-      else removed++;
+      else {
+        removed++;
+        // older sign-ups also got a game account from the database trigger: remove it so the username is free again
+        const acc = await db.from('accounts').delete().eq('pid', stale[i]);
+        if (acc.error) console.error('Could not remove game account for ' + stale[i] + ':', acc.error.message);
+      }
     }
     return removed;
   }
@@ -278,7 +302,7 @@ function createAccounts(url, serviceKey, anonKey) {
   }
 
   return {
-    verifyToken: verifyToken, purgeUnconfirmed: purgeUnconfirmed, signUp: signUp, signIn: signIn, refreshSession: refreshSession, signOut: signOut, ledgerPage: ledgerPage, raceHistory: raceHistory, raceDetail: raceDetail, usernameAvailable: usernameAvailable, join: join, view: view,
+    verifyToken: verifyToken, purgeUnconfirmed: purgeUnconfirmed, signUp: signUp, createConfirmedUser: createConfirmedUser, signIn: signIn, refreshSession: refreshSession, signOut: signOut, ledgerPage: ledgerPage, raceHistory: raceHistory, raceDetail: raceDetail, usernameAvailable: usernameAvailable, join: join, view: view,
     recordRaceStats: recordRaceStats, playerStats: playerStats, leaderboard: leaderboard,
     collectEntries: collectEntries, refundEntry: refundEntry, voidPot: voidPot, voidAllPots: voidAllPots,
     settle: settle, recentResults: recentResults, ENTRY_FEE: ENTRY_FEE,
