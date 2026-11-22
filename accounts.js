@@ -166,6 +166,9 @@ function createAccounts(url, serviceKey, anonKey) {
       else {
         removed++;
         // older sign-ups also got a game account from the database trigger: remove it so the username is free again
+        // the welcome-coins entry in the ledger points at the account, so it has to go first (unconfirmed people never raced, so it is the only thing there)
+        const led = await db.from('ledger').delete().eq('pid', stale[i]);
+        if (led.error) console.error('Could not remove ledger rows for ' + stale[i] + ':', led.error.message);
         const acc = await db.from('accounts').delete().eq('pid', stale[i]);
         if (acc.error) console.error('Could not remove game account for ' + stale[i] + ':', acc.error.message);
       }
